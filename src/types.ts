@@ -640,7 +640,17 @@ export interface Asset {
   /** Free-form status from the source system, e.g. "Production", "Inactive". */
   status?: string;
   assetType?: string;
+  /** OS name and edition as reported by the source, e.g. "Windows 11 Pro". */
   operatingSystem?: string;
+  /** Version/build when the source carries one, e.g. "22H2" or "10.0.19045". */
+  osVersion?: string;
+  /** Free-form OS detail from the source (service pack, install notes). */
+  osNotes?: string;
+  /** Firmware revision for appliances and network gear. */
+  firmwareVersion?: string;
+  /** Patch counts from an RMM, when present. */
+  patchesApplied?: number;
+  patchesTotal?: number;
   primaryIp?: string;
   /** Additional addresses seen for this asset, normalized lowercase. */
   ipAddresses?: string[];

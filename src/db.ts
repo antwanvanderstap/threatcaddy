@@ -302,6 +302,12 @@ db.version(33).stores({
   assets: 'id, externalId, name, hostname, primaryIp, macAddress, serialNumber, assetType, status, importedAt, trashed, archived, createdAt, updatedAt, *tags, *ipAddresses, *macAddresses, *linkedFolderIds',
 });
 
+// Version 34: index operatingSystem for attack-surface roll-ups that group the
+// inventory by OS without loading every configuration item into memory.
+db.version(34).stores({
+  assets: 'id, externalId, name, hostname, primaryIp, macAddress, serialNumber, assetType, status, operatingSystem, importedAt, trashed, archived, createdAt, updatedAt, *tags, *ipAddresses, *macAddresses, *linkedFolderIds',
+});
+
 function evidenceKindFromExtension(value: string): EvidenceKind {
   const lower = value.toLowerCase();
   if (lower.endsWith('pdf')) return 'pdf';

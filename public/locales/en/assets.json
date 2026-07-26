@@ -2,39 +2,36 @@
   "header.title": "Assets",
   "header.scopeGlobal": "Organization-wide configuration inventory",
   "header.scopeInvestigation": "Organization-wide inventory · correlating into {{name}}",
-
   "tabs.inventory": "Inventory ({{count}})",
   "tabs.correlate": "Correlate event",
-
   "actions.caddyAI": "CaddyAI",
   "actions.dismiss": "Dismiss",
-
   "import.button": "Import CMDB CSV",
   "import.importing": "Importing",
   "import.result": "{{created}} added, {{updated}} updated, {{skipped}} skipped",
-
   "stats.total": "assets",
   "stats.servers": "servers",
   "stats.workstations": "workstations",
   "stats.withIp": "with IP",
-
   "search.placeholder": "Search name, IP, MAC, serial…",
   "search.noResults": "No assets match this search.",
-
   "empty.noAssets": "No assets yet",
   "empty.noAssetsDesc": "Import a configurations export from ITGlue, ConnectWise, or another CMDB to build your inventory. Once imported, you can correlate security events against it.",
-
   "table.name": "Name",
   "table.type": "Type",
+  "table.os": "Operating system",
   "table.ip": "IP address",
   "table.mac": "MAC address",
   "table.status": "Status",
-
   "detail.unknownType": "Unknown type",
   "detail.hostname": "Hostname",
   "detail.serial": "Serial",
   "detail.assetTag": "Asset tag",
   "detail.os": "Operating system",
+  "detail.osVersion": "OS version",
+  "detail.osNotes": "OS notes",
+  "detail.firmware": "Firmware",
+  "detail.patches": "Patches applied",
   "detail.manufacturer": "Manufacturer",
   "detail.model": "Model",
   "detail.location": "Location",
@@ -46,7 +43,6 @@
   "detail.linkToCase": "Link to investigation",
   "detail.linked": "Linked",
   "detail.trash": "Trash",
-
   "correlate.importEvent": "Import event CSV",
   "correlate.needInventory": "Import a CMDB export first — there is nothing to correlate against yet.",
   "correlate.noRows": "That file contained no rows.",

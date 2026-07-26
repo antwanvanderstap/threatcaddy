@@ -362,6 +362,7 @@ function InventoryTab({
                 <tr className="text-left text-text-muted">
                   <th className="px-3 py-2 font-medium">{t('table.name')}</th>
                   <th className="px-3 py-2 font-medium">{t('table.type')}</th>
+                  <th className="px-3 py-2 font-medium">{t('table.os')}</th>
                   <th className="px-3 py-2 font-medium">{t('table.ip')}</th>
                   <th className="px-3 py-2 font-medium">{t('table.mac')}</th>
                   <th className="px-3 py-2 font-medium">{t('table.status')}</th>
@@ -379,6 +380,11 @@ function InventoryTab({
                   >
                     <td className="px-3 py-1.5 font-medium truncate max-w-[16rem]">{asset.name}</td>
                     <td className="px-3 py-1.5 text-text-muted truncate max-w-[12rem]">{asset.assetType ?? '—'}</td>
+                    <td className="px-3 py-1.5 truncate max-w-[14rem]">
+                      {asset.operatingSystem
+                        ? `${asset.operatingSystem}${asset.osVersion ? ` ${asset.osVersion}` : ''}`
+                        : <span className="text-text-muted">—</span>}
+                    </td>
                     <td className="px-3 py-1.5 font-mono">{asset.primaryIp ?? '—'}</td>
                     <td className="px-3 py-1.5 font-mono text-text-muted">
                       {asset.macAddress ? formatMac(normalizeMac(asset.macAddress) ?? asset.macAddress) : '—'}
@@ -415,6 +421,15 @@ function InventoryTab({
             <DetailRow label={t('detail.serial')} value={selected.serialNumber} mono />
             <DetailRow label={t('detail.assetTag')} value={selected.assetTag} mono />
             <DetailRow label={t('detail.os')} value={selected.operatingSystem} />
+            <DetailRow label={t('detail.osVersion')} value={selected.osVersion} mono />
+            <DetailRow label={t('detail.osNotes')} value={selected.osNotes} />
+            <DetailRow label={t('detail.firmware')} value={selected.firmwareVersion} mono />
+            <DetailRow
+              label={t('detail.patches')}
+              value={selected.patchesTotal != null
+                ? `${selected.patchesApplied ?? 0} / ${selected.patchesTotal}`
+                : undefined}
+            />
             <DetailRow label={t('detail.manufacturer')} value={selected.manufacturer} />
             <DetailRow label={t('detail.model')} value={selected.model} />
             <DetailRow label={t('detail.location')} value={selected.location} />

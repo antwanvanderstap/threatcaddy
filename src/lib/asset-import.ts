@@ -28,6 +28,11 @@ const FIELD_ALIASES: Record<string, string[]> = {
   status: ['configuration_status_name', 'status', 'state'],
   assetType: ['configuration_type_name', 'type', 'device_type', 'rmm_device_type'],
   operatingSystem: ['operating_system_name', 'operating_system', 'os', 'rmm_operating_system', 'datto_operating_system'],
+  osVersion: ['operating_system_version', 'os_version', 'os_build', 'version'],
+  osNotes: ['operating_system_notes', 'os_notes'],
+  firmwareVersion: ['firmware_version', 'firmware', 'dnet_firmware'],
+  patchesApplied: ['rmm_patches_applied', 'patches_applied'],
+  patchesTotal: ['rmm_patches_total', 'patches_total'],
   primaryIp: ['primary_ip', 'ip_address', 'ipv4', 'ip'],
   macAddress: ['mac_address', 'mac', 'physical_address'],
   serialNumber: ['serial_number', 'serial', 'rmm_serial_number', 'datto_appliance_serial_number'],
@@ -59,6 +64,12 @@ function parseDate(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const ms = Date.parse(value);
   return Number.isNaN(ms) ? undefined : ms;
+}
+
+function parseInt10(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const n = Number.parseInt(value, 10);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 function parseBool(value: string | undefined): boolean | undefined {
@@ -106,6 +117,11 @@ export function rowToAsset(
     status: pick(row, 'status'),
     assetType: pick(row, 'assetType'),
     operatingSystem: pick(row, 'operatingSystem'),
+    osVersion: pick(row, 'osVersion'),
+    osNotes: pick(row, 'osNotes'),
+    firmwareVersion: pick(row, 'firmwareVersion'),
+    patchesApplied: parseInt10(pick(row, 'patchesApplied')),
+    patchesTotal: parseInt10(pick(row, 'patchesTotal')),
     primaryIp,
     ipAddresses: primaryIp ? [primaryIp] : [],
     macAddress,
