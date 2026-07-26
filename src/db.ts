@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { Note, Task, Folder, Tag, TimelineEvent, Timeline, Whiteboard, ActivityLogEntry, StandaloneIOC, EvidenceItem, ChatThread, NoteTemplate, PlaybookTemplate, Checkpoint, CustomSlashCommand, AgentAction, AgentProfile, AgentDeployment, AgentMeeting, EvidenceKind, EvidenceExtractionStatus } from './types';
+import type { Note, Task, Folder, Tag, TimelineEvent, Timeline, Whiteboard, ActivityLogEntry, StandaloneIOC, EvidenceItem, Asset, ChatThread, NoteTemplate, PlaybookTemplate, Checkpoint, CustomSlashCommand, AgentAction, AgentProfile, AgentDeployment, AgentMeeting, EvidenceKind, EvidenceExtractionStatus } from './types';
 import type { IntegrationTemplate, InstalledIntegration, IntegrationRun } from './types/integration-types';
 import { installEncryptionMiddleware } from './lib/encryptionMiddleware';
 
@@ -14,6 +14,7 @@ const db = new Dexie('ThreatCaddyDB') as Dexie & {
   activityLog: EntityTable<ActivityLogEntry, 'id'>;
   standaloneIOCs: EntityTable<StandaloneIOC, 'id'>;
   evidenceItems: EntityTable<EvidenceItem, 'id'>;
+  assets: EntityTable<Asset, 'id'>;
   chatThreads: EntityTable<ChatThread, 'id'>;
   noteTemplates: EntityTable<NoteTemplate, 'id'>;
   playbookTemplates: EntityTable<PlaybookTemplate, 'id'>;
@@ -292,6 +293,13 @@ db.version(32).stores({
   evidenceItems: 'id, title, folderId, fileName, importedAt, createdAt, updatedAt, trashed, archived, *tags, [folderId+updatedAt]',
 }).upgrade(async (tx) => {
   await restoreFalsePositiveEvidenceNotes(tx);
+});
+
+// Version 33: asset management (CMDB) inventory.
+// Global table — assets are org-wide, not investigation-scoped, so there is no
+// folderId index. `*linkedFolderIds` gives reverse lookup from an investigation.
+db.version(33).stores({
+  assets: 'id, externalId, name, hostname, primaryIp, macAddress, serialNumber, assetType, status, importedAt, trashed, archived, createdAt, updatedAt, *tags, *ipAddresses, *macAddresses, *linkedFolderIds',
 });
 
 function evidenceKindFromExtension(value: string): EvidenceKind {

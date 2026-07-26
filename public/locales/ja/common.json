@@ -215,5 +215,6 @@
   "error.unexpectedDetail": "予期しないエラーが発生しました。",
   "header.caddylabs": "CaddyLabs",
   "sidebar.evidence": "証拠",
-  "sidebar.products": "成果物"
+  "sidebar.products": "成果物",
+  "sidebar.assets": "資産"
 }

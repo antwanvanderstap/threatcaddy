@@ -207,7 +207,7 @@ export interface BackupDestination {
 }
 
 /** Top-level view/page the user can navigate to. */
-export type ViewMode = 'dashboard' | 'notes' | 'tasks' | 'timeline' | 'whiteboard' | 'evidence' | 'products' | 'activity' | 'graph' | 'ioc-stats' | 'chat' | 'caddyshack' | 'agent' | 'investigations';
+export type ViewMode = 'dashboard' | 'notes' | 'tasks' | 'timeline' | 'whiteboard' | 'evidence' | 'products' | 'assets' | 'activity' | 'graph' | 'ioc-stats' | 'chat' | 'caddyshack' | 'agent' | 'investigations';
 export type EditorMode = 'edit' | 'preview' | 'split';
 export type TaskViewMode = 'list' | 'kanban';
 
@@ -619,6 +619,105 @@ export interface StandaloneIOC {
   updatedBy?: string;
   createdAt: number;
   updatedAt: number;
+}
+
+// ---------------------------------------------------------------------------
+// Asset management (CMDB)
+// ---------------------------------------------------------------------------
+
+/**
+ * A configuration item from an external CMDB/RMM export (ITGlue, ConnectWise,
+ * Datto, ...). Assets are a global org-wide inventory, deliberately NOT scoped
+ * to a single investigation: one import serves every case. `linkedFolderIds`
+ * records which investigations an asset has been correlated into.
+ */
+export interface Asset {
+  id: string;
+  /** External CMDB record id, kept so re-imports update rather than duplicate. */
+  externalId?: string;
+  name: string;
+  hostname?: string;
+  /** Free-form status from the source system, e.g. "Production", "Inactive". */
+  status?: string;
+  assetType?: string;
+  operatingSystem?: string;
+  primaryIp?: string;
+  /** Additional addresses seen for this asset, normalized lowercase. */
+  ipAddresses?: string[];
+  /** Normalized to lowercase colon-separated form, e.g. "00:50:56:bd:dc:cd". */
+  macAddress?: string;
+  macAddresses?: string[];
+  serialNumber?: string;
+  assetTag?: string;
+  manufacturer?: string;
+  model?: string;
+  location?: string;
+  contactName?: string;
+  notes?: string;
+  archivedInSource?: boolean;
+  warrantyExpiresAt?: number;
+  purchasedAt?: number;
+  installedAt?: number;
+  sourceUpdatedAt?: number;
+  /** Where this record came from, e.g. the imported file name. */
+  source?: string;
+  importedAt: number;
+  /** Investigations this asset has been correlated into. */
+  linkedFolderIds?: string[];
+  linkedIOCIds?: string[];
+  tags: string[];
+  clsLevel?: string;
+  trashed: boolean;
+  trashedAt?: number;
+  archived: boolean;
+  createdBy?: string;
+  updatedBy?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * Confidence tier for an observable-to-asset match.
+ * - `exact`  — a unique identifier matched (MAC, serial, IP, hostname).
+ * - `subnet` — no asset owns the address, but inventoried assets share its /24.
+ * - `gap`    — the observable is an internal address with no CMDB record at all.
+ */
+export type AssetMatchTier = 'exact' | 'subnet' | 'gap';
+
+/** Which field produced an exact match, ordered strongest-first at match time. */
+export type AssetMatchField = 'mac' | 'serial' | 'ip' | 'hostname' | 'assetTag' | 'subnet';
+
+/** One observable extracted from an event, before correlation. */
+export interface AssetObservable {
+  /** e.g. "Source IP", "Destination Host" — carried through for display. */
+  label: string;
+  kind: 'ip' | 'mac' | 'hostname' | 'serial';
+  value: string;
+  /** Direction within the event, when known. */
+  role?: 'source' | 'destination';
+}
+
+/** Result of correlating a single observable against the asset inventory. */
+export interface AssetCorrelation {
+  observable: AssetObservable;
+  tier: AssetMatchTier;
+  matchedField?: AssetMatchField;
+  /** Assets that matched. Empty for `gap`. */
+  assetIds: string[];
+  /** For `subnet`, the CIDR that contained the observable, e.g. "10.10.100.0/24". */
+  subnet?: string;
+  /** Human-readable justification, e.g. "MAC 00:50:56:bd:dc:cd matches VHQ-NAG-UAT01". */
+  rationale: string;
+}
+
+/** Aggregate correlation outcome for one event or IOC set. */
+export interface AssetCorrelationReport {
+  correlations: AssetCorrelation[];
+  exactCount: number;
+  subnetCount: number;
+  gapCount: number;
+  /** Unique asset ids touched by any exact or subnet match. */
+  matchedAssetIds: string[];
 }
 
 export type EvidenceKind =
@@ -1052,6 +1151,7 @@ export interface ExportData {
   whiteboards?: Whiteboard[];
   standaloneIOCs?: StandaloneIOC[];
   evidenceItems?: EvidenceItem[];
+  assets?: Asset[];
   chatThreads?: ChatThread[];
   agentActions?: AgentAction[];
   agentProfiles?: AgentProfile[];

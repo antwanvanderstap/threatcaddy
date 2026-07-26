@@ -215,5 +215,6 @@
   "error.unexpectedDetail": "Ocurrió un error inesperado.",
   "header.caddylabs": "CaddyLabs",
   "sidebar.evidence": "Pruebas",
-  "sidebar.products": "Productos"
+  "sidebar.products": "Productos",
+  "sidebar.assets": "Activos"
 }

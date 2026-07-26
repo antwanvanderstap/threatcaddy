@@ -20,6 +20,7 @@ import { useTimelines } from './hooks/useTimelines';
 import { useWhiteboards } from './hooks/useWhiteboards';
 import { useStandaloneIOCs } from './hooks/useStandaloneIOCs';
 import { useEvidenceItems } from './hooks/useEvidenceItems';
+import { useAssets } from './hooks/useAssets';
 import { useChats } from './hooks/useChats';
 import { useFolders } from './hooks/useFolders';
 import { useTags } from './hooks/useTags';
@@ -31,6 +32,7 @@ import { useIntegrations } from './hooks/useIntegrations';
 const PlaybookPicker = lazy(() => import('./components/Playbooks/PlaybookPicker').then(m => ({ default: m.PlaybookPicker })));
 const OperationNameGenerator = lazy(() => import('./components/Common/OperationNameGenerator').then(m => ({ default: m.OperationNameGenerator })));
 const EvidenceView = lazy(() => import('./components/Evidence/EvidenceView').then(m => ({ default: m.EvidenceView })));
+const AssetView = lazy(() => import('./components/Assets/AssetView').then(m => ({ default: m.AssetView })));
 const ProductView = lazy(() => import('./components/Products/ProductView').then(m => ({ default: m.ProductView })));
 import { useActivityLog } from './hooks/useActivityLog';
 import { ActivityLogContext } from './hooks/ActivityLogContext';
@@ -126,6 +128,7 @@ function AppDataLayer() {
   const { whiteboards, createWhiteboard, updateWhiteboard, deleteWhiteboard, trashWhiteboard, restoreWhiteboard, toggleArchiveWhiteboard, emptyTrashWhiteboards, getFilteredWhiteboards, whiteboardCounts, reload: reloadWhiteboards } = useWhiteboards();
   const standaloneIOCsHook = useStandaloneIOCs();
   const evidenceItemsHook = useEvidenceItems();
+  const assetsHook = useAssets();
   const chatsHook = useChats();
   const { folders, loading: foldersLoading, createFolder, findOrCreateFolder, updateFolder, deleteFolder, deleteFolderWithContents, trashFolderContents, archiveFolder, unarchiveFolder, reload: reloadFolders } = useFolders();
   const { tags, createTag, updateTag, deleteTag, reload: reloadTags } = useTags();
@@ -166,6 +169,7 @@ function AppDataLayer() {
     reloadWhiteboards();
     standaloneIOCsHook.reload();
     evidenceItemsHook.reload();
+    assetsHook.reload();
     chatsHook.reload();
     reloadTags();
     noteTemplatesHook.reload();
@@ -246,6 +250,7 @@ function AppDataLayer() {
             reloadWhiteboards={reloadWhiteboards}
             standaloneIOCsHook={standaloneIOCsHook}
             evidenceItemsHook={evidenceItemsHook}
+            assetsHook={assetsHook}
             chatsHook={chatsHook}
             folders={folders}
             foldersLoading={foldersLoading}
@@ -348,6 +353,7 @@ type AppInnerProps = {
   reloadWhiteboards: ReturnType<typeof useWhiteboards>['reload'];
   standaloneIOCsHook: ReturnType<typeof useStandaloneIOCs>;
   evidenceItemsHook: ReturnType<typeof useEvidenceItems>;
+  assetsHook: ReturnType<typeof useAssets>;
   chatsHook: ReturnType<typeof useChats>;
   folders: ReturnType<typeof useFolders>['folders'];
   foldersLoading: boolean;
@@ -396,7 +402,7 @@ const AppInner = memo(function AppInner({
   whiteboards, createWhiteboard, updateWhiteboard, deleteWhiteboard,
   trashWhiteboard, restoreWhiteboard, toggleArchiveWhiteboard,
   emptyTrashWhiteboards, getFilteredWhiteboards, whiteboardCounts, reloadWhiteboards,
-  standaloneIOCsHook, evidenceItemsHook, chatsHook,
+  standaloneIOCsHook, evidenceItemsHook, assetsHook, chatsHook,
   folders, foldersLoading, createFolder, findOrCreateFolder, updateFolder, deleteFolder,
   deleteFolderWithContents, trashFolderContents, archiveFolder, unarchiveFolder, reloadFolders,
   tags, createTag, updateTag, deleteTag, reloadTags,
@@ -1434,8 +1440,9 @@ const AppInner = memo(function AppInner({
     onDeleteTag: loggedDeleteTag,
     investigationScopedCounts,
     chatCount: chatsHook.threadCounts.total,
+    assetCount: assetsHook.assetCounts.total || undefined,
     serverConnected: auth.connected,
-  }), [noteCounts, combinedTrashedCount, combinedArchivedCount, tasks.taskCounts, timeline.eventCounts, timelines, selectedTimelineId, loggedCreateTimeline, loggedDeleteTimeline, updateTimeline, timelineEventCounts, whiteboards, selectedFolderId, selectedWhiteboardId, loggedCreateWhiteboard, loggedDeleteWhiteboard, updateWhiteboard, whiteboardCounts, updateTag, loggedDeleteTag, investigationScopedCounts, chatsHook.threadCounts.total, auth.connected]);
+  }), [noteCounts, combinedTrashedCount, combinedArchivedCount, tasks.taskCounts, timeline.eventCounts, timelines, selectedTimelineId, loggedCreateTimeline, loggedDeleteTimeline, updateTimeline, timelineEventCounts, whiteboards, selectedFolderId, selectedWhiteboardId, loggedCreateWhiteboard, loggedDeleteWhiteboard, updateWhiteboard, whiteboardCounts, updateTag, loggedDeleteTag, investigationScopedCounts, chatsHook.threadCounts.total, assetsHook.assetCounts.total, auth.connected]);
 
   // CaddyAgent hook — manages auto-repeating loop
   const caddyAgent = useCaddyAgent({
@@ -1808,6 +1815,16 @@ const AppInner = memo(function AppInner({
             items={investigationEvidenceItems}
             onImportFiles={handleImportEvidence}
             onDeduplicate={handleDeduplicateEvidence}
+            onOpenChat={() => setActiveView('chat')}
+          />
+        ) : activeView === 'assets' ? (
+          <AssetView
+            assets={assetsHook.assets}
+            folderId={selectedFolderId}
+            folderName={selectedFolder?.name}
+            onImportCSV={assetsHook.importAssetCSV}
+            onTrashAsset={assetsHook.trashAsset}
+            onLinkAssetToFolder={assetsHook.linkAssetToFolder}
             onOpenChat={() => setActiveView('chat')}
           />
         ) : activeView === 'products' ? (

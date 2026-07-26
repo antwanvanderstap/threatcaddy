@@ -7,7 +7,8 @@ ThreatCaddy is a client-side threat intelligence and incident response platform.
 ## Architecture
 
 - **SPA**: React + TypeScript + Vite + Tailwind. Entry: `src/App.tsx`
-- **Database**: Dexie (IndexedDB). Schema: `src/db.ts`. Currently version 28.
+- **Database**: Dexie (IndexedDB). Schema: `src/db.ts`. Currently version 33.
+- **Asset Management**: `src/components/Assets/` + `src/lib/asset-import.ts` + `src/lib/asset-correlation.ts` + `src/hooks/useAssets.ts`. Org-wide CMDB inventory (global, NOT investigation-scoped) imported from ITGlue/ConnectWise `configurations.csv` exports. Correlates SIEM event observables against inventory in three tiers: `exact` (MAC/serial/IP/hostname), `subnet` (/24 proximity), `gap` (internal address absent from CMDB). Assets link into investigations via `linkedFolderIds`.
 - **Extension**: `extension/src/` — `background.js` (LLM streaming, fetch proxy, notifications), `bridge.js` (page↔extension message relay), `content.js` (capture UI)
 - **Team Server**: `server/` — Hono + Drizzle + PostgreSQL. Syncs investigations, runs server-side agents, manages bots.
 - **CaddyAI Chat**: `src/components/Chat/ChatView.tsx` + `src/hooks/useLLM.ts`. Human-driven conversational AI. Stays mounted in background when switching tabs.

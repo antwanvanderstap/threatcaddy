@@ -1,5 +1,5 @@
 import { db } from '../db';
-import type { Note, Task, Folder, Tag, TimelineEvent, Timeline, Whiteboard, StandaloneIOC, EvidenceItem, ChatThread, ChatMessage, NoteTemplate, PlaybookTemplate, PlaybookStep, ExportData, TimelineExportData, TimelineEventType, ConfidenceLevel, IOCAnalysis, IOCEntry, IOCRelationship, TaskComment, NoteAnnotation, QuickLink, LLMProvider, IOCType, TemplateSource, PlaybookStepEntity, AgentAction, EvidenceExtractionStatus, EvidenceKind, ProductBaselineAsset, ProductBaselineMetadata, ProductBaselineSourceDocument, ProductBaselineTestFixture } from '../types';
+import type { Note, Task, Folder, Tag, TimelineEvent, Timeline, Whiteboard, StandaloneIOC, EvidenceItem, Asset, ChatThread, ChatMessage, NoteTemplate, PlaybookTemplate, PlaybookStep, ExportData, TimelineExportData, TimelineEventType, ConfidenceLevel, IOCAnalysis, IOCEntry, IOCRelationship, TaskComment, NoteAnnotation, QuickLink, LLMProvider, IOCType, TemplateSource, PlaybookStepEntity, AgentAction, EvidenceExtractionStatus, EvidenceKind, ProductBaselineAsset, ProductBaselineMetadata, ProductBaselineSourceDocument, ProductBaselineTestFixture } from '../types';
 import { TIMELINE_EVENT_TYPE_LABELS, CONFIDENCE_LEVELS, IOC_TYPE_LABELS } from '../types';
 import { nanoid } from 'nanoid';
 
@@ -16,6 +16,7 @@ export async function exportJSON(): Promise<string> {
   const whiteboards = await db.whiteboards.toArray();
   const standaloneIOCs = await db.standaloneIOCs.toArray();
   const evidenceItems = mergeEvidenceItemLists(await db.evidenceItems.toArray(), evidenceItemsFromNotes(allNotes));
+  const assets = await db.assets.toArray();
   const chatThreads = await db.chatThreads.toArray();
   const noteTemplates = await db.noteTemplates.toArray();
   const playbookTemplates = await db.playbookTemplates.toArray();
@@ -46,6 +47,7 @@ export async function exportJSON(): Promise<string> {
     whiteboards,
     standaloneIOCs,
     evidenceItems: evidenceItems.length > 0 ? evidenceItems : undefined,
+    assets: assets.length > 0 ? assets : undefined,
     chatThreads,
     agentActions: agentActions.length > 0 ? agentActions : undefined,
     agentProfiles: agentProfiles.length > 0 ? agentProfiles : undefined,
@@ -479,6 +481,51 @@ export function sanitizeEvidenceItem(raw: unknown): EvidenceItem | null {
     archived: bool(r.archived),
     createdBy: r.createdBy != null ? str(r.createdBy) : undefined,
     updatedBy: r.updatedBy != null ? str(r.updatedBy) : undefined,
+    createdAt: num(r.createdAt, Date.now()),
+    updatedAt: num(r.updatedAt, Date.now()),
+  };
+}
+
+export function sanitizeAsset(raw: unknown): Asset | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const optStr = (value: unknown) => (value != null ? str(value) : undefined);
+  const optNum = (value: unknown) => (value != null ? num(value) : undefined);
+  return {
+    id: str(r.id),
+    externalId: optStr(r.externalId),
+    name: str(r.name, 'Untitled Asset'),
+    hostname: optStr(r.hostname),
+    status: optStr(r.status),
+    assetType: optStr(r.assetType),
+    operatingSystem: optStr(r.operatingSystem),
+    primaryIp: optStr(r.primaryIp),
+    ipAddresses: Array.isArray(r.ipAddresses) ? strArr(r.ipAddresses) : undefined,
+    macAddress: optStr(r.macAddress),
+    macAddresses: Array.isArray(r.macAddresses) ? strArr(r.macAddresses) : undefined,
+    serialNumber: optStr(r.serialNumber),
+    assetTag: optStr(r.assetTag),
+    manufacturer: optStr(r.manufacturer),
+    model: optStr(r.model),
+    location: optStr(r.location),
+    contactName: optStr(r.contactName),
+    notes: optStr(r.notes),
+    archivedInSource: r.archivedInSource != null ? bool(r.archivedInSource) : undefined,
+    warrantyExpiresAt: optNum(r.warrantyExpiresAt),
+    purchasedAt: optNum(r.purchasedAt),
+    installedAt: optNum(r.installedAt),
+    sourceUpdatedAt: optNum(r.sourceUpdatedAt),
+    source: optStr(r.source),
+    importedAt: num(r.importedAt, num(r.createdAt, Date.now())),
+    linkedFolderIds: Array.isArray(r.linkedFolderIds) ? strArr(r.linkedFolderIds) : undefined,
+    linkedIOCIds: Array.isArray(r.linkedIOCIds) ? strArr(r.linkedIOCIds) : undefined,
+    tags: strArr(r.tags),
+    clsLevel: optStr(r.clsLevel),
+    trashed: bool(r.trashed),
+    trashedAt: optNum(r.trashedAt),
+    archived: bool(r.archived),
+    createdBy: optStr(r.createdBy),
+    updatedBy: optStr(r.updatedBy),
     createdAt: num(r.createdAt, Date.now()),
     updatedAt: num(r.updatedAt, Date.now()),
   };
@@ -1082,7 +1129,7 @@ function sanitizeQuickLink(raw: unknown): QuickLink | null {
   };
 }
 
-export async function importJSON(json: string): Promise<{ notes: number; tasks: number; folders: number; tags: number; timelineEvents: number; timelines: number; whiteboards: number; standaloneIOCs: number; evidenceItems: number; chatThreads: number; noteTemplates: number; playbookTemplates: number; agentActions: number; agentProfiles: number; agentDeployments: number; agentMeetings: number }> {
+export async function importJSON(json: string): Promise<{ notes: number; tasks: number; folders: number; tags: number; timelineEvents: number; timelines: number; whiteboards: number; standaloneIOCs: number; evidenceItems: number; assets: number; chatThreads: number; noteTemplates: number; playbookTemplates: number; agentActions: number; agentProfiles: number; agentDeployments: number; agentMeetings: number }> {
   if (json.length > MAX_IMPORT_SIZE) {
     throw new Error(`Backup file too large (max ${MAX_IMPORT_SIZE / 1024 / 1024} MB)`);
   }
@@ -1124,6 +1171,10 @@ export async function importJSON(json: string): Promise<{ notes: number; tasks: 
     .filter((item: EvidenceItem | null): item is EvidenceItem => item !== null && !!item.id);
   const evidenceItems = mergeEvidenceItemLists(importedEvidenceItems, evidenceItemsFromNotes(allNotes));
 
+  const assets = (Array.isArray(data.assets) ? data.assets : [])
+    .map(sanitizeAsset)
+    .filter((a: Asset | null): a is Asset => a !== null && !!a.id);
+
   const chatThreads = (Array.isArray(data.chatThreads) ? data.chatThreads : [])
     .map(sanitizeChatThread)
     .filter((c: ChatThread | null): c is ChatThread => c !== null && !!c.id);
@@ -1160,7 +1211,7 @@ export async function importJSON(json: string): Promise<{ notes: number; tasks: 
   const importedDeployments = (Array.isArray(data.agentDeployments) ? data.agentDeployments : []).map(sanitizeAgentDeployment).filter(Boolean);
   const importedMeetings = (Array.isArray(data.agentMeetings) ? data.agentMeetings : []).map(sanitizeAgentMeeting).filter(Boolean);
 
-  await db.transaction('rw', [db.notes, db.tasks, db.folders, db.tags, db.timelineEvents, db.timelines, db.whiteboards, db.standaloneIOCs, db.evidenceItems, db.chatThreads, db.noteTemplates, db.playbookTemplates, db.agentActions, db.agentProfiles, db.agentDeployments, db.agentMeetings], async () => {
+  await db.transaction('rw', [db.notes, db.tasks, db.folders, db.tags, db.timelineEvents, db.timelines, db.whiteboards, db.standaloneIOCs, db.evidenceItems, db.assets, db.chatThreads, db.noteTemplates, db.playbookTemplates, db.agentActions, db.agentProfiles, db.agentDeployments, db.agentMeetings], async () => {
     await db.notes.clear();
     await db.tasks.clear();
     await db.folders.clear();
@@ -1170,6 +1221,7 @@ export async function importJSON(json: string): Promise<{ notes: number; tasks: 
     await db.whiteboards.clear();
     await db.standaloneIOCs.clear();
     await db.evidenceItems.clear();
+    await db.assets.clear();
     await db.chatThreads.clear();
     await db.noteTemplates.clear();
     await db.playbookTemplates.clear();
@@ -1187,6 +1239,7 @@ export async function importJSON(json: string): Promise<{ notes: number; tasks: 
     await db.whiteboards.bulkAdd(whiteboards);
     await db.standaloneIOCs.bulkAdd(standaloneIOCs);
     if (evidenceItems.length > 0) await db.evidenceItems.bulkAdd(evidenceItems);
+    if (assets.length > 0) await db.assets.bulkAdd(assets);
     await db.chatThreads.bulkAdd(chatThreads);
     if (noteTemplatesRaw.length > 0) await db.noteTemplates.bulkAdd(noteTemplatesRaw);
     if (playbookTemplatesRaw.length > 0) await db.playbookTemplates.bulkAdd(playbookTemplatesRaw);
@@ -1216,6 +1269,7 @@ export async function importJSON(json: string): Promise<{ notes: number; tasks: 
     whiteboards: whiteboards.length,
     standaloneIOCs: standaloneIOCs.length,
     evidenceItems: evidenceItems.length,
+    assets: assets.length,
     chatThreads: chatThreads.length,
     noteTemplates: noteTemplatesRaw.length,
     playbookTemplates: playbookTemplatesRaw.length,

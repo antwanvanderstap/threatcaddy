@@ -70,7 +70,7 @@ export function useFolders() {
   }, []);
 
   const deleteFolderWithContents = useCallback(async (id: string) => {
-    await db.transaction('rw', [db.folders, db.notes, db.tasks, db.timelineEvents, db.whiteboards, db.standaloneIOCs, db.evidenceItems, db.chatThreads, db.agentActions, db.agentDeployments, db.agentMeetings], async () => {
+    await db.transaction('rw', [db.folders, db.notes, db.tasks, db.timelineEvents, db.whiteboards, db.standaloneIOCs, db.evidenceItems, db.assets, db.chatThreads, db.agentActions, db.agentDeployments, db.agentMeetings], async () => {
       // Collect IDs of entities in this folder (needed for orphan link cleanup)
       const [notesInFolder, tasksInFolder, eventsInFolder] = await Promise.all([
         db.notes.where('folderId').equals(id).primaryKeys(),
@@ -94,6 +94,11 @@ export function useFolders() {
         db.agentActions.where('investigationId').equals(id).delete(),
         db.agentDeployments.where('investigationId').equals(id).delete(),
         db.agentMeetings.where('investigationId').equals(id).delete(),
+        // Assets are a global inventory, not folder-scoped content: deleting an
+        // investigation must unlink them, never delete the configuration items.
+        db.assets.where('linkedFolderIds').equals(id).modify((asset) => {
+          asset.linkedFolderIds = (asset.linkedFolderIds ?? []).filter((fid) => fid !== id);
+        }),
       ]);
 
       // Clean orphaned cross-entity links in parallel batches

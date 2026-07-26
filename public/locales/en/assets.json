@@ -1,0 +1,62 @@
+{
+  "header.title": "Assets",
+  "header.scopeGlobal": "Organization-wide configuration inventory",
+  "header.scopeInvestigation": "Organization-wide inventory · correlating into {{name}}",
+
+  "tabs.inventory": "Inventory ({{count}})",
+  "tabs.correlate": "Correlate event",
+
+  "actions.caddyAI": "CaddyAI",
+  "actions.dismiss": "Dismiss",
+
+  "import.button": "Import CMDB CSV",
+  "import.importing": "Importing",
+  "import.result": "{{created}} added, {{updated}} updated, {{skipped}} skipped",
+
+  "stats.total": "assets",
+  "stats.servers": "servers",
+  "stats.workstations": "workstations",
+  "stats.withIp": "with IP",
+
+  "search.placeholder": "Search name, IP, MAC, serial…",
+  "search.noResults": "No assets match this search.",
+
+  "empty.noAssets": "No assets yet",
+  "empty.noAssetsDesc": "Import a configurations export from ITGlue, ConnectWise, or another CMDB to build your inventory. Once imported, you can correlate security events against it.",
+
+  "table.name": "Name",
+  "table.type": "Type",
+  "table.ip": "IP address",
+  "table.mac": "MAC address",
+  "table.status": "Status",
+
+  "detail.unknownType": "Unknown type",
+  "detail.hostname": "Hostname",
+  "detail.serial": "Serial",
+  "detail.assetTag": "Asset tag",
+  "detail.os": "Operating system",
+  "detail.manufacturer": "Manufacturer",
+  "detail.model": "Model",
+  "detail.location": "Location",
+  "detail.contact": "Contact",
+  "detail.warranty": "Warranty ends",
+  "detail.source": "Source",
+  "detail.imported": "Imported",
+  "detail.notes": "Notes",
+  "detail.linkToCase": "Link to investigation",
+  "detail.linked": "Linked",
+  "detail.trash": "Trash",
+
+  "correlate.importEvent": "Import event CSV",
+  "correlate.needInventory": "Import a CMDB export first — there is nothing to correlate against yet.",
+  "correlate.noRows": "That file contained no rows.",
+  "correlate.noObservables": "No correlatable observables were found in that event. Expected columns such as Source IP, Destination IP, Source Host, or Source Mac.",
+  "correlate.intro": "Import a security event export to match its network observables against your asset inventory. Results are graded by confidence:",
+  "correlate.legendExact": "Exact — a unique identifier (MAC, serial, IP, or hostname) matched a configuration item.",
+  "correlate.legendSubnet": "Subnet — no asset owns the address, but inventoried assets share its /24. Useful context, not identification.",
+  "correlate.legendGap": "Coverage gap — an internal host or address with no CMDB record at all.",
+  "correlate.tierExact": "exact",
+  "correlate.tierSubnet": "subnet",
+  "correlate.tierGap": "gaps",
+  "correlate.openAsset": "Open in inventory"
+}

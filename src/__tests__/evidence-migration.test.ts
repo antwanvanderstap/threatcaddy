@@ -339,10 +339,12 @@ describe('v29→v32 evidence migration (non-destructive)', () => {
     expect(itemsAfterSecond).toEqual(['analyst-extraction', 'ev-true']);
   });
 
-  it('reaches schema version 32 after the upgrade', async () => {
+  it('reaches the current schema version after the upgrade', async () => {
     await createV28DB([makeNote({ id: 'plain', tags: [] })]);
     await runMigration();
-    expect(db.verno).toBe(32);
+    // The evidence migration chain ends at v32; later versions (v33 assets)
+    // add tables without touching evidence, so the DB opens at the latest.
+    expect(db.verno).toBe(33);
   });
 
   it('full chain: a realistic mix survives — every seeded note is still present', async () => {

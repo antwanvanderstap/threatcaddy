@@ -3,7 +3,7 @@ import {
   FileText, ListChecks, Clock, Trash2, Briefcase,
   Archive, Settings as SettingsIcon,
   PanelLeftClose, PanelLeft, Github, Download, Chrome, PenTool, Activity, Network, Search, Shield,
-  LayoutDashboard, MessageSquare, MessagesSquare, ChevronLeft, Bot, Paperclip, FileOutput,
+  LayoutDashboard, MessageSquare, MessagesSquare, ChevronLeft, Bot, Paperclip, FileOutput, HardDrive,
 } from 'lucide-react';
 import type { Timeline, Whiteboard, ViewMode } from '../../types';
 import { cn } from '../../lib/utils';
@@ -36,6 +36,7 @@ interface SidebarProps {
   onDeleteTag?: (id: string) => void;
   investigationScopedCounts?: { notes: number; tasks: number; events: number; whiteboards: number; iocs: number } | null;
   chatCount?: number;
+  assetCount?: number;
   agentStatus?: 'idle' | 'running' | 'waiting' | 'paused' | 'error';
   onToggleAgent?: () => void;
   serverConnected?: boolean;
@@ -62,6 +63,7 @@ export function Sidebar({
   onDeleteTag,
   investigationScopedCounts,
   chatCount,
+  assetCount,
   agentStatus,
   onToggleAgent,
 }: SidebarProps) {
@@ -106,6 +108,7 @@ export function Sidebar({
     { view: 'whiteboard', icon: PenTool, label: t('sidebar.whiteboards'), badge: investigationScopedCounts ? investigationScopedCounts.whiteboards : whiteboardCount, dataTour: 'whiteboards' },
     { view: 'evidence', icon: Paperclip, label: t('sidebar.evidence') },
     { view: 'products', icon: FileOutput, label: t('sidebar.products') },
+    { view: 'assets', icon: HardDrive, label: t('sidebar.assets'), badge: assetCount },
     { view: 'ioc-stats', icon: Search, label: t('sidebar.iocs'), badge: investigationScopedCounts ? investigationScopedCounts.iocs : undefined, badgeColor: 'bg-accent-green' },
     { view: 'graph', icon: Network, label: t('sidebar.graph') },
     { view: 'activity', icon: Activity, label: t('sidebar.activity'), dataTour: 'activity' },
@@ -375,6 +378,14 @@ export function Sidebar({
           label={t('sidebar.evidence')}
           active={activeView === 'evidence'}
           onClick={() => nav(() => navToView('evidence'))}
+          scopedColor={selectedFolder?.color || undefined}
+        />
+        <NavItem
+          icon={<HardDrive size={16} />}
+          label={t('sidebar.assets')}
+          active={activeView === 'assets'}
+          onClick={() => nav(() => navToView('assets'))}
+          badge={assetCount}
           scopedColor={selectedFolder?.color || undefined}
         />
         <NavItem

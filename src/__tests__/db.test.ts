@@ -63,10 +63,11 @@ describe('Database schema', () => {
     expect(db.integrationTemplates).toBeDefined();
     expect(db.installedIntegrations).toBeDefined();
     expect(db.integrationRuns).toBeDefined();
+    expect(db.assets).toBeDefined();
   });
 
-  it('is at version 32', () => {
-    expect(db.verno).toBe(32);
+  it('is at version 33', () => {
+    expect(db.verno).toBe(33);
   });
 });
 

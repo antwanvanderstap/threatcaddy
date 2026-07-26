@@ -320,5 +320,6 @@
   "demoModal.removeHint": "คุณสามารถลบข้อมูลตัวอย่างได้ภายหลังในการตั้งค่า",
   "header.caddylabs": "CaddyLabs",
   "sidebar.evidence": "หลักฐาน",
-  "sidebar.products": "ผลิตภัณฑ์"
+  "sidebar.products": "ผลิตภัณฑ์",
+  "sidebar.assets": "สินทรัพย์"
 }

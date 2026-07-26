@@ -19,7 +19,7 @@ export async function buildFullBackupPayload(
   const data: BackupPayload['data'] = {};
 
   if (scope === 'all') {
-    const [notes, tasks, folders, tags, timelineEvents, timelines, whiteboards, standaloneIOCs, evidenceItems, chatThreads, agentActions, agentProfiles, agentDeployments, agentMeetings, noteTemplates, playbookTemplates, integrationTemplates, installedIntegrations, customSlashCommands] =
+    const [notes, tasks, folders, tags, timelineEvents, timelines, whiteboards, standaloneIOCs, evidenceItems, assets, chatThreads, agentActions, agentProfiles, agentDeployments, agentMeetings, noteTemplates, playbookTemplates, integrationTemplates, installedIntegrations, customSlashCommands] =
       await Promise.all([
         db.notes.toArray(),
         db.tasks.toArray(),
@@ -30,6 +30,7 @@ export async function buildFullBackupPayload(
         db.whiteboards.toArray(),
         db.standaloneIOCs.toArray(),
         db.evidenceItems.toArray(),
+        db.assets.toArray(),
         db.chatThreads.toArray(),
         db.agentActions.toArray(),
         db.agentProfiles.toArray(),
@@ -41,7 +42,7 @@ export async function buildFullBackupPayload(
         db.installedIntegrations.toArray(),
         db.customSlashCommands.toArray(),
       ]);
-    Object.assign(data, { notes, tasks, folders, tags, timelineEvents, timelines, whiteboards, standaloneIOCs, evidenceItems, chatThreads, agentActions, agentProfiles, agentDeployments, agentMeetings, noteTemplates, playbookTemplates, integrationTemplates, installedIntegrations, customSlashCommands });
+    Object.assign(data, { notes, tasks, folders, tags, timelineEvents, timelines, whiteboards, standaloneIOCs, evidenceItems, assets, chatThreads, agentActions, agentProfiles, agentDeployments, agentMeetings, noteTemplates, playbookTemplates, integrationTemplates, installedIntegrations, customSlashCommands });
   } else if (scope === 'investigation') {
     if (!scopeId) throw new Error('scopeId required for investigation scope');
     const [folder, notes, tasks, allTags, events, allTimelines, whiteboards, iocs, evidenceItems, chats, agentActions, agentDeployments, agentMeetings] = await Promise.all([
@@ -109,7 +110,7 @@ export async function buildDifferentialPayload(
   const data: BackupPayload['data'] = {};
   const deletedIds: Record<string, string[]> = {};
 
-  const tableNames = ['notes', 'tasks', 'folders', 'tags', 'timelineEvents', 'timelines', 'whiteboards', 'standaloneIOCs', 'evidenceItems', 'chatThreads', 'agentActions', 'agentProfiles', 'agentDeployments', 'agentMeetings', 'noteTemplates', 'playbookTemplates', 'integrationTemplates', 'installedIntegrations', 'customSlashCommands'] as const;
+  const tableNames = ['notes', 'tasks', 'folders', 'tags', 'timelineEvents', 'timelines', 'whiteboards', 'standaloneIOCs', 'evidenceItems', 'assets', 'chatThreads', 'agentActions', 'agentProfiles', 'agentDeployments', 'agentMeetings', 'noteTemplates', 'playbookTemplates', 'integrationTemplates', 'installedIntegrations', 'customSlashCommands'] as const;
 
   for (const tableName of tableNames) {
     const table = getTable(tableName);
@@ -168,6 +169,7 @@ export function countPayloadEntities(payload: BackupPayload): number {
   if (data.whiteboards) count += data.whiteboards.length;
   if (data.standaloneIOCs) count += data.standaloneIOCs.length;
   if (data.evidenceItems) count += data.evidenceItems.length;
+  if (data.assets) count += data.assets.length;
   if (data.chatThreads) count += data.chatThreads.length;
   if (data.agentActions) count += data.agentActions.length;
   if (data.agentProfiles) count += data.agentProfiles.length;
