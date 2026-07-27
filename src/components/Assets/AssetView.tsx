@@ -6,20 +6,19 @@ import {
   CheckCircle2,
   Crosshair,
   HardDrive,
-  Link2,
   Loader2,
   Network,
   Search,
   Server,
-  Trash2,
   Upload,
   X,
 } from 'lucide-react';
-import type { Asset, AssetCorrelation, AssetCorrelationReport } from '../../types';
-import { cn, formatDate } from '../../lib/utils';
+import type { Asset, AssetCorrelation, AssetCorrelationReport, OverridableAssetField } from '../../types';
+import { cn } from '../../lib/utils';
 import { correlateEventRows, formatMac, normalizeMac } from '../../lib/asset-correlation';
 import type { AssetImportResult } from '../../lib/asset-import';
 import { AttackSurfaceTab } from './AttackSurfaceTab';
+import { AssetDetailPanel } from './AssetDetailPanel';
 
 interface AssetViewProps {
   assets: Asset[];
@@ -28,6 +27,9 @@ interface AssetViewProps {
   onImportCSV: (text: string, opts: { source?: string }) => Promise<AssetImportResult>;
   onTrashAsset: (id: string) => Promise<void>;
   onLinkAssetToFolder?: (assetId: string, folderId: string) => Promise<void>;
+  onSetAssetField: (assetId: string, field: OverridableAssetField, value: string | null, reason?: string) => Promise<void>;
+  onRevertAssetField: (assetId: string, field: OverridableAssetField) => Promise<void>;
+  onSetAnalystNotes: (assetId: string, notes: string) => Promise<void>;
   onOpenChat: () => void;
 }
 
@@ -58,6 +60,9 @@ export function AssetView({
   onImportCSV,
   onTrashAsset,
   onLinkAssetToFolder,
+  onSetAssetField,
+  onRevertAssetField,
+  onSetAnalystNotes,
   onOpenChat,
 }: AssetViewProps) {
   const { t } = useTranslation('assets');
@@ -276,6 +281,9 @@ export function AssetView({
           onImportClick={() => cmdbInputRef.current?.click()}
           folderId={folderId}
           onLinkToFolder={onLinkAssetToFolder}
+          onSetField={onSetAssetField}
+          onRevertField={onRevertAssetField}
+          onSetAnalystNotes={onSetAnalystNotes}
           t={t}
         />
       ) : tab === 'surface' ? (
@@ -318,12 +326,16 @@ interface InventoryTabProps {
   onImportClick: () => void;
   folderId?: string;
   onLinkToFolder?: (assetId: string, folderId: string) => Promise<void>;
+  onSetField: (assetId: string, field: OverridableAssetField, value: string | null, reason?: string) => Promise<void>;
+  onRevertField: (assetId: string, field: OverridableAssetField) => Promise<void>;
+  onSetAnalystNotes: (assetId: string, notes: string) => Promise<void>;
   t: (key: string, opts?: Record<string, unknown>) => string;
 }
 
 function InventoryTab({
   assets, totalCount, stats, query, onQueryChange,
-  selected, onSelect, onTrash, onImportClick, folderId, onLinkToFolder, t,
+  selected, onSelect, onTrash, onImportClick, folderId, onLinkToFolder,
+  onSetField, onRevertField, onSetAnalystNotes, t,
 }: InventoryTabProps) {
   if (totalCount === 0) {
     return (
@@ -416,90 +428,17 @@ function InventoryTab({
 
       {/* Detail panel */}
       {selected && (
-        <aside className="w-80 shrink-0 border-l border-border-subtle overflow-auto">
-          <div className="p-3 border-b border-border-subtle flex items-start gap-2">
-            <Server size={15} className="text-accent-blue mt-0.5 shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium break-words">{selected.name}</p>
-              <p className="text-xs text-text-muted">{selected.assetType ?? t('detail.unknownType')}</p>
-            </div>
-          </div>
-
-          <dl className="p-3 space-y-2 text-xs">
-            <DetailRow label={t('table.status')} value={selected.status} />
-            <DetailRow label={t('detail.hostname')} value={selected.hostname} />
-            <DetailRow label={t('table.ip')} value={selected.primaryIp} mono />
-            <DetailRow
-              label={t('table.mac')}
-              value={selected.macAddress ? formatMac(normalizeMac(selected.macAddress) ?? selected.macAddress) : undefined}
-              mono
-            />
-            <DetailRow label={t('detail.serial')} value={selected.serialNumber} mono />
-            <DetailRow label={t('detail.assetTag')} value={selected.assetTag} mono />
-            <DetailRow label={t('detail.os')} value={selected.operatingSystem} />
-            <DetailRow label={t('detail.osVersion')} value={selected.osVersion} mono />
-            <DetailRow label={t('detail.osNotes')} value={selected.osNotes} />
-            <DetailRow label={t('detail.firmware')} value={selected.firmwareVersion} mono />
-            <DetailRow
-              label={t('detail.patches')}
-              value={selected.patchesTotal != null
-                ? `${selected.patchesApplied ?? 0} / ${selected.patchesTotal}`
-                : undefined}
-            />
-            <DetailRow label={t('detail.manufacturer')} value={selected.manufacturer} />
-            <DetailRow label={t('detail.model')} value={selected.model} />
-            <DetailRow label={t('detail.location')} value={selected.location} />
-            <DetailRow label={t('detail.contact')} value={selected.contactName} />
-            <DetailRow
-              label={t('detail.warranty')}
-              value={selected.warrantyExpiresAt ? formatDate(selected.warrantyExpiresAt) : undefined}
-            />
-            <DetailRow label={t('detail.source')} value={selected.source} />
-            <DetailRow label={t('detail.imported')} value={formatDate(selected.importedAt)} />
-          </dl>
-
-          {selected.notes && (
-            <div className="px-3 pb-3">
-              <p className="text-xs text-text-muted mb-1">{t('detail.notes')}</p>
-              <p className="text-xs whitespace-pre-wrap break-words bg-bg-secondary rounded p-2">{selected.notes}</p>
-            </div>
-          )}
-
-          <div className="p-3 border-t border-border-subtle flex items-center gap-1.5">
-            {folderId && onLinkToFolder && (
-              <button
-                type="button"
-                onClick={() => onLinkToFolder(selected.id, folderId)}
-                disabled={selected.linkedFolderIds?.includes(folderId)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded border border-border-subtle hover:bg-bg-hover disabled:opacity-50"
-              >
-                <Link2 size={13} />
-                {selected.linkedFolderIds?.includes(folderId)
-                  ? t('detail.linked')
-                  : t('detail.linkToCase')}
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => onTrash(selected.id)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded border border-border-subtle hover:bg-bg-hover text-accent-red ml-auto"
-            >
-              <Trash2 size={13} />
-              {t('detail.trash')}
-            </button>
-          </div>
-        </aside>
+        <AssetDetailPanel
+          asset={selected}
+          folderId={folderId}
+          onSetField={(field, value, reason) => onSetField(selected.id, field, value, reason)}
+          onRevertField={(field) => onRevertField(selected.id, field)}
+          onSetAnalystNotes={(notes) => onSetAnalystNotes(selected.id, notes)}
+          onTrash={() => onTrash(selected.id)}
+          onLinkToFolder={folderId && onLinkToFolder ? () => onLinkToFolder(selected.id, folderId) : undefined}
+          t={t}
+        />
       )}
-    </div>
-  );
-}
-
-function DetailRow({ label, value, mono }: { label: string; value?: string; mono?: boolean }) {
-  if (!value) return null;
-  return (
-    <div className="flex gap-2">
-      <dt className="text-text-muted shrink-0 w-24">{label}</dt>
-      <dd className={cn('min-w-0 break-words', mono && 'font-mono')}>{value}</dd>
     </div>
   );
 }

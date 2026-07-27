@@ -672,6 +672,14 @@ export interface Asset {
   /** Where this record came from, e.g. the imported file name. */
   source?: string;
   importedAt: number;
+  /**
+   * Analyst corrections layered over the imported values, keyed by field.
+   * Read through `resolveAsset` — never read the base fields directly when
+   * displaying or matching, or corrections will be ignored.
+   */
+  overrides?: Partial<Record<OverridableAssetField, AssetFieldOverride>>;
+  /** Analyst commentary. Never written by an import, so always preserved. */
+  analystNotes?: string;
   /** Investigations this asset has been correlated into. */
   linkedFolderIds?: string[];
   linkedIOCIds?: string[];
@@ -684,6 +692,39 @@ export interface Asset {
   updatedBy?: string;
   createdAt: number;
   updatedAt: number;
+}
+
+/**
+ * Asset fields an analyst is allowed to correct.
+ *
+ * Limited to inventory facts a CMDB export also carries. Bookkeeping fields
+ * (ids, timestamps, trash state) and link arrays are excluded — those are owned
+ * by the application, not by analyst judgement.
+ */
+export type OverridableAssetField =
+  | 'name' | 'hostname' | 'status' | 'assetType'
+  | 'operatingSystem' | 'osVersion' | 'osNotes' | 'firmwareVersion'
+  | 'primaryIp' | 'macAddress' | 'serialNumber' | 'assetTag'
+  | 'manufacturer' | 'model' | 'location' | 'contactName' | 'notes';
+
+/**
+ * An analyst correction to a single asset field, with provenance.
+ *
+ * Overrides are stored separately from the imported values rather than written
+ * over them. A CMDB re-import replaces the base record wholesale, so an edit
+ * written in place would be silently destroyed on the next import; keeping the
+ * correction in an overlay means it survives, and the original CMDB value stays
+ * visible so the discrepancy can be reported back to the source system.
+ */
+export interface AssetFieldOverride {
+  /** Corrected value. `null` means the analyst deliberately cleared the field. */
+  value: string | null;
+  updatedAt: number;
+  updatedBy?: string;
+  /** Why the correction was made, e.g. "Confirmed via live response". */
+  reason?: string;
+  /** Investigation this correction came out of. */
+  folderId?: string;
 }
 
 /**

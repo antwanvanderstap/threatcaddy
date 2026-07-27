@@ -248,6 +248,12 @@ export function parseAssetCSV(
         clsLevel: prior.clsLevel,
         linkedFolderIds: prior.linkedFolderIds ?? [],
         linkedIOCIds: prior.linkedIOCIds,
+        // Analyst corrections survive re-import by design: the export is
+        // authoritative for the base record, the overlay for what an
+        // investigation established. Dropping these here would silently
+        // discard investigation findings on the next CMDB sync.
+        overrides: prior.overrides,
+        analystNotes: prior.analystNotes,
         trashed: prior.trashed,
         trashedAt: prior.trashedAt,
         archived: prior.archived,

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { nanoid } from 'nanoid';
 import { db } from '../db';
-import type { Asset } from '../types';
+import type { Asset, OverridableAssetField } from '../types';
+import { setOverride, clearOverride, type SetOverrideOptions } from '../lib/asset-overrides';
 import { purgeOldTrash } from '../lib/trash-purge';
 import { parseAssetCSV, type AssetImportResult } from '../lib/asset-import';
 
@@ -95,6 +96,35 @@ export function useAssets() {
     return result;
   }, [loadAssets]);
 
+  /**
+   * Correct a single asset field. Stored as an override rather than written
+   * over the imported value, so a later CMDB re-import cannot destroy it.
+   */
+  const setAssetField = useCallback(async (
+    assetId: string,
+    field: OverridableAssetField,
+    value: string | null,
+    options: Omit<SetOverrideOptions, 'updatedBy'> = {},
+  ) => {
+    const asset = assets.find((a) => a.id === assetId);
+    if (!asset) return;
+    const { getCurrentUserName } = await import('../lib/utils');
+    const overrides = setOverride(asset, field, value, { ...options, updatedBy: getCurrentUserName() });
+    await updateAsset(assetId, { overrides, updatedBy: getCurrentUserName() });
+  }, [assets, updateAsset]);
+
+  /** Drop a correction, reverting the field to its imported value. */
+  const revertAssetField = useCallback(async (assetId: string, field: OverridableAssetField) => {
+    const asset = assets.find((a) => a.id === assetId);
+    if (!asset) return;
+    await updateAsset(assetId, { overrides: clearOverride(asset, field) });
+  }, [assets, updateAsset]);
+
+  /** Analyst commentary — never touched by an import, so stored directly. */
+  const setAnalystNotes = useCallback(async (assetId: string, notes: string) => {
+    await updateAsset(assetId, { analystNotes: notes.trim() || undefined });
+  }, [updateAsset]);
+
   /** Record that an asset was correlated into an investigation. */
   const linkAssetToFolder = useCallback(async (assetId: string, folderId: string) => {
     const asset = assets.find((a) => a.id === assetId);
@@ -136,6 +166,9 @@ export function useAssets() {
     importAssetCSV,
     linkAssetToFolder,
     unlinkAssetFromFolder,
+    setAssetField,
+    revertAssetField,
+    setAnalystNotes,
     assetCounts,
     reload: loadAssets,
   };

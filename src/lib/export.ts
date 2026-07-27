@@ -2,6 +2,7 @@ import { db } from '../db';
 import type { Note, Task, Folder, Tag, TimelineEvent, Timeline, Whiteboard, StandaloneIOC, EvidenceItem, Asset, ChatThread, ChatMessage, NoteTemplate, PlaybookTemplate, PlaybookStep, ExportData, TimelineExportData, TimelineEventType, ConfidenceLevel, IOCAnalysis, IOCEntry, IOCRelationship, TaskComment, NoteAnnotation, QuickLink, LLMProvider, IOCType, TemplateSource, PlaybookStepEntity, AgentAction, EvidenceExtractionStatus, EvidenceKind, ProductBaselineAsset, ProductBaselineMetadata, ProductBaselineSourceDocument, ProductBaselineTestFixture } from '../types';
 import { TIMELINE_EVENT_TYPE_LABELS, CONFIDENCE_LEVELS, IOC_TYPE_LABELS } from '../types';
 import { nanoid } from 'nanoid';
+import { isOverridableField } from './asset-overrides';
 
 export async function exportJSON(): Promise<string> {
   // Load tables sequentially to reduce peak memory usage (avoids loading
@@ -486,6 +487,25 @@ export function sanitizeEvidenceItem(raw: unknown): EvidenceItem | null {
   };
 }
 
+/** Drop unknown fields and malformed entries from an imported overrides map. */
+function sanitizeAssetOverrides(raw: unknown): Asset['overrides'] {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const out: NonNullable<Asset['overrides']> = {};
+  for (const [field, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!isOverridableField(field)) continue;
+    if (!value || typeof value !== 'object') continue;
+    const v = value as Record<string, unknown>;
+    out[field] = {
+      value: v.value == null ? null : str(v.value),
+      updatedAt: num(v.updatedAt, Date.now()),
+      updatedBy: v.updatedBy != null ? str(v.updatedBy) : undefined,
+      reason: v.reason != null ? str(v.reason) : undefined,
+      folderId: v.folderId != null ? str(v.folderId) : undefined,
+    };
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 export function sanitizeAsset(raw: unknown): Asset | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
@@ -522,6 +542,8 @@ export function sanitizeAsset(raw: unknown): Asset | null {
     sourceUpdatedAt: optNum(r.sourceUpdatedAt),
     source: optStr(r.source),
     importedAt: num(r.importedAt, num(r.createdAt, Date.now())),
+    overrides: sanitizeAssetOverrides(r.overrides),
+    analystNotes: optStr(r.analystNotes),
     linkedFolderIds: Array.isArray(r.linkedFolderIds) ? strArr(r.linkedFolderIds) : undefined,
     linkedIOCIds: Array.isArray(r.linkedIOCIds) ? strArr(r.linkedIOCIds) : undefined,
     tags: strArr(r.tags),

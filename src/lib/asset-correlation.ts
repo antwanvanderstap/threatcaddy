@@ -5,6 +5,7 @@ import type {
   AssetMatchField,
   AssetObservable,
 } from '../types';
+import { resolveAsset } from './asset-overrides';
 
 // ---------------------------------------------------------------------------
 // Normalization
@@ -112,7 +113,10 @@ function push(map: Map<string, string[]>, key: string | undefined, id: string) {
   }
 }
 
-export function buildAssetIndex(assets: Asset[]): AssetIndex {
+export function buildAssetIndex(rawAssets: Asset[]): AssetIndex {
+  // Corrections must be indexed, not the stale imported values — otherwise an
+  // analyst fixing a wrong IP would leave correlation matching the old one.
+  const assets = rawAssets.map(resolveAsset);
   const index: AssetIndex = {
     byIp: new Map(),
     byMac: new Map(),

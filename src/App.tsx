@@ -1825,6 +1825,10 @@ const AppInner = memo(function AppInner({
             onImportCSV={assetsHook.importAssetCSV}
             onTrashAsset={assetsHook.trashAsset}
             onLinkAssetToFolder={assetsHook.linkAssetToFolder}
+            onSetAssetField={(id, field, value, reason) =>
+              assetsHook.setAssetField(id, field, value, { reason, folderId: selectedFolderId })}
+            onRevertAssetField={assetsHook.revertAssetField}
+            onSetAnalystNotes={assetsHook.setAnalystNotes}
             onOpenChat={() => setActiveView('chat')}
           />
         ) : activeView === 'products' ? (

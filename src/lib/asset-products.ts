@@ -1,4 +1,5 @@
 import type { Asset } from '../types';
+import { resolveAsset } from './asset-overrides';
 
 /**
  * A normalized product identity derived from an asset's free-text inventory
@@ -187,7 +188,11 @@ function inferVendorFromModel(model: string): string | undefined {
  * one: a physical server running Windows contributes both the OS and the
  * hardware model, and each attracts different advisories.
  */
-export function productsForAsset(asset: Asset): AssetProduct[] {
+export function productsForAsset(rawAsset: Asset): AssetProduct[] {
+  // Resolved here rather than at each call site: this is the single entry point
+  // for attack-surface and applicability matching, so an analyst correcting an
+  // OS immediately improves both without any caller needing to remember.
+  const asset = resolveAsset(rawAsset);
   const products: AssetProduct[] = [];
 
   const os = normalizeOperatingSystem(asset.operatingSystem);
