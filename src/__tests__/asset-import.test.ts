@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseAssetCSV, rowToAsset, assetIdentityKey } from '../lib/asset-import';
+import { parseAssetCSV, rowToAsset, assetIdentityKey, isNonTechnicalType } from '../lib/asset-import';
 import type { Asset } from '../types';
 
 const HEADER = 'id,name,configuration_status_name,archived,configuration_type_name,operating_system_name,primary_ip,serial_number,location_name,contact_name,updated_at,mac_address,asset_tag,manufacturer_name,model_name,notes';
@@ -71,6 +71,37 @@ describe('assetIdentityKey', () => {
   it('does not treat a VMware BIOS UUID as an identity', () => {
     const key = assetIdentityKey({ serialNumber: 'VMware-42 3d 11', name: 'VM', primaryIp: '10.0.0.2' });
     expect(key).toBe('name:vm|10.0.0.2');
+  });
+});
+
+describe('non-technical filtering', () => {
+  const LIC = '20146205,FileMaker Pro 11,Active,No,"SW/HW Certs, Licenses & Warranties",,,,,,,,,,,';
+  const ACC = '24290250,AWS Account,Active,No,Account Information,,,,,,,,,,,';
+
+  it('skips licences and account records by default', () => {
+    const result = parseAssetCSV(csv(ROW_SERVER, LIC, ACC), [], { now: 1000 });
+    expect(result.created).toBe(1);
+    expect(result.skippedNonTechnical).toBe(2);
+    expect(result.assets.map((a) => a.name)).toEqual(['VHQ-NAG-UAT01']);
+  });
+
+  it('reports the skip count separately from malformed rows', () => {
+    const result = parseAssetCSV(csv(LIC, '999,,Active,No,Managed Server,,,,,,,,,,,'), [], { now: 1000 });
+    expect(result.skippedNonTechnical).toBe(1);
+    expect(result.skipped).toBe(1);
+  });
+
+  it('can be opted out of', () => {
+    const result = parseAssetCSV(csv(ROW_SERVER, LIC), [], { now: 1000, includeNonTechnical: true });
+    expect(result.created).toBe(2);
+    expect(result.skippedNonTechnical).toBe(0);
+  });
+
+  it('matches the type case-insensitively', () => {
+    expect(isNonTechnicalType('Account Information')).toBe(true);
+    expect(isNonTechnicalType('  account information  ')).toBe(true);
+    expect(isNonTechnicalType('Managed Server')).toBe(false);
+    expect(isNonTechnicalType(undefined)).toBe(false);
   });
 });
 

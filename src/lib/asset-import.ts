@@ -10,8 +10,36 @@ export interface AssetImportResult {
   created: number;
   updated: number;
   skipped: number;
+  /** Rows skipped because their configuration type is not a technical asset. */
+  skippedNonTechnical: number;
   errors: string[];
   truncated: boolean;
+}
+
+/**
+ * Configuration types that describe contracts, credentials or non-computing
+ * items rather than technical assets.
+ *
+ * These are excluded at import so they cannot inflate attack-surface totals or
+ * appear as inventory coverage gaps — a software licence has no OS and cannot
+ * be exploited. The count is reported separately rather than dropped silently,
+ * so the analyst can see the export contained more rows than the inventory.
+ */
+export const NON_TECHNICAL_TYPES = new Set([
+  'sw/hw certs, licenses & warranties',
+  'account information',
+  'other',
+  'miscellaneous',
+  'contract',
+  'agreement',
+  'licensing',
+  'warranty',
+]);
+
+/** True when a configuration_type_name denotes a non-technical record. */
+export function isNonTechnicalType(assetType: string | undefined): boolean {
+  if (!assetType) return false;
+  return NON_TECHNICAL_TYPES.has(assetType.trim().toLowerCase());
 }
 
 /**
@@ -157,7 +185,7 @@ export function rowToAsset(
 export function parseAssetCSV(
   text: string,
   existing: Asset[] = [],
-  opts: { source?: string; createdBy?: string; now?: number } = {},
+  opts: { source?: string; createdBy?: string; now?: number; includeNonTechnical?: boolean } = {},
 ): AssetImportResult {
   const errors: string[] = [];
   const importedAt = opts.now ?? Date.now();
@@ -187,11 +215,17 @@ export function parseAssetCSV(
   let created = 0;
   let updated = 0;
   let skipped = 0;
+  let skippedNonTechnical = 0;
 
   for (const row of rows) {
     const draft = rowToAsset(row, { source: opts.source, importedAt, createdBy: opts.createdBy });
     if (!draft) {
       skipped++;
+      continue;
+    }
+
+    if (!opts.includeNonTechnical && isNonTechnicalType(draft.assetType)) {
+      skippedNonTechnical++;
       continue;
     }
 
@@ -228,5 +262,5 @@ export function parseAssetCSV(
     }
   }
 
-  return { assets: result, created, updated, skipped, errors, truncated };
+  return { assets: result, created, updated, skipped, skippedNonTechnical, errors, truncated };
 }

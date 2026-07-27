@@ -19,6 +19,7 @@ import type { Asset, AssetCorrelation, AssetCorrelationReport } from '../../type
 import { cn, formatDate } from '../../lib/utils';
 import { correlateEventRows, formatMac, normalizeMac } from '../../lib/asset-correlation';
 import type { AssetImportResult } from '../../lib/asset-import';
+import { AttackSurfaceTab } from './AttackSurfaceTab';
 
 interface AssetViewProps {
   assets: Asset[];
@@ -30,7 +31,7 @@ interface AssetViewProps {
   onOpenChat: () => void;
 }
 
-type Tab = 'inventory' | 'correlate';
+type Tab = 'inventory' | 'correlate' | 'surface';
 
 const TIER_STYLES = {
   exact: {
@@ -71,6 +72,10 @@ export function AssetView({
   const [report, setReport] = useState<AssetCorrelationReport | null>(null);
   const [correlating, setCorrelating] = useState(false);
   const [correlationError, setCorrelationError] = useState('');
+
+  // Frozen at mount: EOL assessment must not shift mid-session, and a fresh
+  // Date.now() on every render would invalidate the surface memo continuously.
+  const [now] = useState(() => Date.now());
 
   const cmdbInputRef = useRef<HTMLInputElement>(null);
   const eventInputRef = useRef<HTMLInputElement>(null);
@@ -118,8 +123,10 @@ export function AssetView({
       setImportMessage(t('import.result', {
         created: result.created,
         updated: result.updated,
-        skipped: result.skipped,
-      }));
+        skipped: result.skipped + result.skippedNonTechnical,
+      }) + (result.skippedNonTechnical > 0
+        ? ` · ${t('import.nonTechnicalSkipped', { count: result.skippedNonTechnical })}`
+        : ''));
     } catch (err) {
       setImportError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -219,7 +226,7 @@ export function AssetView({
 
       {/* Tabs */}
       <div className="shrink-0 border-b border-border-subtle px-4 flex items-center gap-1">
-        {(['inventory', 'correlate'] as const).map((value) => (
+        {(['inventory', 'correlate', 'surface'] as const).map((value) => (
           <button
             key={value}
             type="button"
@@ -233,7 +240,9 @@ export function AssetView({
           >
             {value === 'inventory'
               ? t('tabs.inventory', { count: stats.total })
-              : t('tabs.correlate')}
+              : value === 'correlate'
+                ? t('tabs.correlate')
+                : t('tabs.surface')}
           </button>
         ))}
       </div>
@@ -267,6 +276,13 @@ export function AssetView({
           onImportClick={() => cmdbInputRef.current?.click()}
           folderId={folderId}
           onLinkToFolder={onLinkAssetToFolder}
+          t={t}
+        />
+      ) : tab === 'surface' ? (
+        <AttackSurfaceTab
+          assets={activeAssets}
+          now={now}
+          onOpenAsset={openAsset}
           t={t}
         />
       ) : (
