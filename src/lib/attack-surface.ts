@@ -6,6 +6,7 @@ import {
   type AssetProduct,
 } from './asset-products';
 import { assessEol, EOL_STATUS_RANK, type EolAssessment, type EolStatus } from './asset-eol';
+import { summarizeOwners, type OwnerCounts } from './asset-ownership';
 
 // ---------------------------------------------------------------------------
 // Inventory rollup
@@ -17,6 +18,8 @@ export interface ProductExposure {
   cpe: string;
   assetIds: string[];
   eol: EolAssessment;
+  /** Who is exposed — the MSSP, which customers, or nobody labelled yet. */
+  owners: OwnerCounts;
 }
 
 export interface AttackSurface {
@@ -29,6 +32,8 @@ export interface AttackSurface {
   counts: Record<EolStatus, number>;
   /** Assets running at least one product that is EOL or extended-support-only. */
   atRiskAssetIds: string[];
+  /** Ownership split of the at-risk set — who to call about the exposure. */
+  atRiskOwners: OwnerCounts;
   asOf: number;
 }
 
@@ -60,6 +65,7 @@ export function buildAttackSurface(assets: Asset[], asOf: number): AttackSurface
           cpe: toCPE(product),
           assetIds: [],
           eol: assessEol(product, asOf),
+          owners: { mssp: 0, customer: 0, unknown: 0, byCustomer: {} },
         };
         byKey.set(key, exposure);
       }
@@ -68,6 +74,15 @@ export function buildAttackSurface(assets: Asset[], asOf: number): AttackSurface
         atRisk.add(asset.id);
       }
     }
+  }
+
+  // Owner rollups are computed after grouping so each asset is counted once
+  // per exposure, not once per product it happens to contribute.
+  const assetById = new Map(active.map((a) => [a.id, a]));
+  for (const exposure of byKey.values()) {
+    exposure.owners = summarizeOwners(
+      exposure.assetIds.map((id) => assetById.get(id)).filter((a): a is Asset => a !== undefined),
+    );
   }
 
   const exposures = [...byKey.values()].sort((a, b) => {
@@ -87,6 +102,9 @@ export function buildAttackSurface(assets: Asset[], asOf: number): AttackSurface
     unidentifiedAssetIds: active.filter((a) => !covered.has(a.id)).map((a) => a.id),
     counts,
     atRiskAssetIds: [...atRisk],
+    atRiskOwners: summarizeOwners(
+      [...atRisk].map((id) => assetById.get(id)).filter((a): a is Asset => a !== undefined),
+    ),
     asOf,
   };
 }

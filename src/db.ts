@@ -308,6 +308,12 @@ db.version(34).stores({
   assets: 'id, externalId, name, hostname, primaryIp, macAddress, serialNumber, assetType, status, operatingSystem, importedAt, trashed, archived, createdAt, updatedAt, *tags, *ipAddresses, *macAddresses, *linkedFolderIds',
 });
 
+// Version 35: index owner + customerName so MSSP/customer scoping filters
+// through IndexedDB rather than scanning the whole inventory in memory.
+db.version(35).stores({
+  assets: 'id, externalId, name, hostname, primaryIp, macAddress, serialNumber, assetType, status, operatingSystem, owner, customerName, importedAt, trashed, archived, createdAt, updatedAt, *tags, *ipAddresses, *macAddresses, *linkedFolderIds',
+});
+
 function evidenceKindFromExtension(value: string): EvidenceKind {
   const lower = value.toLowerCase();
   if (lower.endsWith('pdf')) return 'pdf';

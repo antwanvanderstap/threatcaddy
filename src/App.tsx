@@ -1829,6 +1829,7 @@ const AppInner = memo(function AppInner({
               assetsHook.setAssetField(id, field, value, { reason, folderId: selectedFolderId })}
             onRevertAssetField={assetsHook.revertAssetField}
             onSetAnalystNotes={assetsHook.setAnalystNotes}
+            onAssignOwnership={assetsHook.assignOwnership}
             onOpenChat={() => setActiveView('chat')}
           />
         ) : activeView === 'products' ? (

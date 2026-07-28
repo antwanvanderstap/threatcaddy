@@ -13,23 +13,26 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import type { Asset, AssetCorrelation, AssetCorrelationReport, OverridableAssetField } from '../../types';
+import type { Asset, AssetCorrelation, AssetCorrelationReport, AssetOwnerType, OverridableAssetField } from '../../types';
 import { cn } from '../../lib/utils';
 import { correlateEventRows, formatMac, normalizeMac } from '../../lib/asset-correlation';
 import type { AssetImportResult } from '../../lib/asset-import';
 import { AttackSurfaceTab } from './AttackSurfaceTab';
 import { AssetDetailPanel } from './AssetDetailPanel';
+import { OwnerBadge, OwnerFilterSelect, ImportOwnerDialog, BulkOwnerBar } from './AssetOwnerControls';
+import { filterByOwner, customerNames, summarizeOwners, type OwnerFilter, type OwnerCounts } from '../../lib/asset-ownership';
 
 interface AssetViewProps {
   assets: Asset[];
   folderId?: string;
   folderName?: string;
-  onImportCSV: (text: string, opts: { source?: string }) => Promise<AssetImportResult>;
+  onImportCSV: (text: string, opts: { source?: string; owner?: AssetOwnerType; customerName?: string }) => Promise<AssetImportResult>;
   onTrashAsset: (id: string) => Promise<void>;
   onLinkAssetToFolder?: (assetId: string, folderId: string) => Promise<void>;
   onSetAssetField: (assetId: string, field: OverridableAssetField, value: string | null, reason?: string) => Promise<void>;
   onRevertAssetField: (assetId: string, field: OverridableAssetField) => Promise<void>;
   onSetAnalystNotes: (assetId: string, notes: string) => Promise<void>;
+  onAssignOwnership: (assetIds: string[], owner: AssetOwnerType, customerName?: string) => Promise<number>;
   onOpenChat: () => void;
 }
 
@@ -63,6 +66,7 @@ export function AssetView({
   onSetAssetField,
   onRevertAssetField,
   onSetAnalystNotes,
+  onAssignOwnership,
   onOpenChat,
 }: AssetViewProps) {
   const { t } = useTranslation('assets');
@@ -81,6 +85,10 @@ export function AssetView({
   // Frozen at mount: EOL assessment must not shift mid-session, and a fresh
   // Date.now() on every render would invalidate the surface memo continuously.
   const [now] = useState(() => Date.now());
+  const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>('all');
+  // Ownership is declared per file, so the picker runs before the file dialog.
+  const [pendingImport, setPendingImport] = useState<{ owner: AssetOwnerType; customerName?: string } | null>(null);
+  const [ownerDialogOpen, setOwnerDialogOpen] = useState(false);
 
   const cmdbInputRef = useRef<HTMLInputElement>(null);
   const eventInputRef = useRef<HTMLInputElement>(null);
@@ -90,14 +98,23 @@ export function AssetView({
     [assets],
   );
 
+  const customers = useMemo(() => customerNames(activeAssets), [activeAssets]);
+
+  /** Assets in the selected ownership scope — the basis for every tab. */
+  const scopedAssets = useMemo(
+    () => filterByOwner(activeAssets, ownerFilter),
+    [activeAssets, ownerFilter],
+  );
+
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return activeAssets;
-    return activeAssets.filter((a) => [
+    if (!needle) return scopedAssets;
+    return scopedAssets.filter((a) => [
       a.name, a.hostname, a.primaryIp, a.macAddress, a.serialNumber,
       a.assetTag, a.assetType, a.operatingSystem, a.location, a.contactName, a.model,
+      a.customerName,
     ].filter(Boolean).join(' ').toLowerCase().includes(needle));
-  }, [activeAssets, query]);
+  }, [scopedAssets, query]);
 
   const selected = useMemo(
     () => activeAssets.find((a) => a.id === selectedId) ?? null,
@@ -105,11 +122,12 @@ export function AssetView({
   );
 
   const stats = useMemo(() => ({
-    total: activeAssets.length,
-    servers: activeAssets.filter((a) => /server/i.test(a.assetType ?? '')).length,
-    workstations: activeAssets.filter((a) => /workstation|endpoint|laptop/i.test(a.assetType ?? '')).length,
-    withIp: activeAssets.filter((a) => a.primaryIp).length,
-  }), [activeAssets]);
+    total: scopedAssets.length,
+    servers: scopedAssets.filter((a) => /server/i.test(a.assetType ?? '')).length,
+    workstations: scopedAssets.filter((a) => /workstation|endpoint|laptop/i.test(a.assetType ?? '')).length,
+    withIp: scopedAssets.filter((a) => a.primaryIp).length,
+    owners: summarizeOwners(scopedAssets),
+  }), [scopedAssets]);
 
   // ── Import ────────────────────────────────────────────────────────
 
@@ -123,7 +141,11 @@ export function AssetView({
     setImportMessage('');
     try {
       const text = await file.text();
-      const result = await onImportCSV(text, { source: file.name });
+      const result = await onImportCSV(text, {
+        source: file.name,
+        owner: pendingImport?.owner,
+        customerName: pendingImport?.customerName,
+      });
       if (result.errors.length > 0) setImportError(result.errors.join(' · '));
       setImportMessage(t('import.result', {
         created: result.created,
@@ -137,7 +159,7 @@ export function AssetView({
     } finally {
       setImporting(false);
     }
-  }, [onImportCSV, t]);
+  }, [onImportCSV, pendingImport, t]);
 
   // ── Correlate ─────────────────────────────────────────────────────
 
@@ -162,17 +184,17 @@ export function AssetView({
         return;
       }
       setEventFileName(file.name);
-      setReport(correlateEventRows(rows, activeAssets));
+      setReport(correlateEventRows(rows, scopedAssets));
     } catch (err) {
       setCorrelationError(err instanceof Error ? err.message : String(err));
     } finally {
       setCorrelating(false);
     }
-  }, [activeAssets, t]);
+  }, [scopedAssets, t]);
 
   const assetById = useMemo(
-    () => new Map(activeAssets.map((a) => [a.id, a])),
-    [activeAssets],
+    () => new Map(scopedAssets.map((a) => [a.id, a])),
+    [scopedAssets],
   );
 
   const openAsset = useCallback((id: string) => {
@@ -199,6 +221,21 @@ export function AssetView({
         onChange={handleEventFile}
       />
 
+      {ownerDialogOpen && (
+        <ImportOwnerDialog
+          customers={customers}
+          onCancel={() => setOwnerDialogOpen(false)}
+          onConfirm={(owner, customerName) => {
+            setPendingImport({ owner, customerName });
+            setOwnerDialogOpen(false);
+            // Defer so the pending selection is committed before the file
+            // dialog opens and the change handler reads it.
+            setTimeout(() => cmdbInputRef.current?.click(), 0);
+          }}
+          t={t}
+        />
+      )}
+
       {/* Header */}
       <div className="shrink-0 border-b border-border-subtle px-4 py-3 flex items-center gap-3 flex-wrap">
         <HardDrive size={18} className="text-accent-blue shrink-0" />
@@ -212,7 +249,7 @@ export function AssetView({
         <div className="flex items-center gap-1 ml-auto">
           <button
             type="button"
-            onClick={() => cmdbInputRef.current?.click()}
+            onClick={() => setOwnerDialogOpen(true)}
             disabled={importing}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded border border-border-subtle hover:bg-bg-hover disabled:opacity-50"
           >
@@ -278,17 +315,21 @@ export function AssetView({
           selected={selected}
           onSelect={setSelectedId}
           onTrash={onTrashAsset}
-          onImportClick={() => cmdbInputRef.current?.click()}
+          onImportClick={() => setOwnerDialogOpen(true)}
           folderId={folderId}
           onLinkToFolder={onLinkAssetToFolder}
           onSetField={onSetAssetField}
           onRevertField={onRevertAssetField}
           onSetAnalystNotes={onSetAnalystNotes}
+          ownerFilter={ownerFilter}
+          onOwnerFilterChange={setOwnerFilter}
+          customers={customers}
+          onAssignOwnership={onAssignOwnership}
           t={t}
         />
       ) : tab === 'surface' ? (
         <AttackSurfaceTab
-          assets={activeAssets}
+          assets={scopedAssets}
           now={now}
           onOpenAsset={openAsset}
           t={t}
@@ -299,7 +340,7 @@ export function AssetView({
           eventFileName={eventFileName}
           correlating={correlating}
           error={correlationError}
-          inventoryEmpty={activeAssets.length === 0}
+          inventoryEmpty={scopedAssets.length === 0}
           assetById={assetById}
           onPickFile={() => eventInputRef.current?.click()}
           onOpenAsset={openAsset}
@@ -317,7 +358,7 @@ export function AssetView({
 interface InventoryTabProps {
   assets: Asset[];
   totalCount: number;
-  stats: { total: number; servers: number; workstations: number; withIp: number };
+  stats: { total: number; servers: number; workstations: number; withIp: number; owners: OwnerCounts };
   query: string;
   onQueryChange: (value: string) => void;
   selected: Asset | null;
@@ -329,13 +370,18 @@ interface InventoryTabProps {
   onSetField: (assetId: string, field: OverridableAssetField, value: string | null, reason?: string) => Promise<void>;
   onRevertField: (assetId: string, field: OverridableAssetField) => Promise<void>;
   onSetAnalystNotes: (assetId: string, notes: string) => Promise<void>;
+  ownerFilter: OwnerFilter;
+  onOwnerFilterChange: (next: OwnerFilter) => void;
+  customers: string[];
+  onAssignOwnership: (assetIds: string[], owner: AssetOwnerType, customerName?: string) => Promise<number>;
   t: (key: string, opts?: Record<string, unknown>) => string;
 }
 
 function InventoryTab({
   assets, totalCount, stats, query, onQueryChange,
   selected, onSelect, onTrash, onImportClick, folderId, onLinkToFolder,
-  onSetField, onRevertField, onSetAnalystNotes, t,
+  onSetField, onRevertField, onSetAnalystNotes,
+  ownerFilter, onOwnerFilterChange, customers, onAssignOwnership, t,
 }: InventoryTabProps) {
   if (totalCount === 0) {
     return (
@@ -367,7 +413,28 @@ function InventoryTab({
             <span><strong className="text-text-primary">{stats.servers}</strong> {t('stats.servers')}</span>
             <span><strong className="text-text-primary">{stats.workstations}</strong> {t('stats.workstations')}</span>
             <span><strong className="text-text-primary">{stats.withIp}</strong> {t('stats.withIp')}</span>
+            {stats.owners.unknown > 0 && (
+              <span className="text-accent-amber">
+                <strong>{stats.owners.unknown}</strong> {t('owner.unlabelled')}
+              </span>
+            )}
           </div>
+          <OwnerFilterSelect
+            value={ownerFilter}
+            customers={customers}
+            onChange={onOwnerFilterChange}
+            t={t}
+          />
+          {assets.length > 0 && (
+            <BulkOwnerBar
+              count={assets.length}
+              customers={customers}
+              onAssign={async (owner, customerName) => {
+                await onAssignOwnership(assets.map((a) => a.id), owner, customerName);
+              }}
+              t={t}
+            />
+          )}
           <div className="relative ml-auto">
             <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-text-muted" />
             <input
@@ -389,6 +456,7 @@ function InventoryTab({
               <thead className="sticky top-0 bg-bg-secondary border-b border-border-subtle">
                 <tr className="text-left text-text-muted">
                   <th className="px-3 py-2 font-medium">{t('table.name')}</th>
+                  <th className="px-3 py-2 font-medium">{t('table.owner')}</th>
                   <th className="px-3 py-2 font-medium">{t('table.type')}</th>
                   <th className="px-3 py-2 font-medium">{t('table.os')}</th>
                   <th className="px-3 py-2 font-medium">{t('table.ip')}</th>
@@ -407,6 +475,9 @@ function InventoryTab({
                     )}
                   >
                     <td className="px-3 py-1.5 font-medium truncate max-w-[16rem]">{asset.name}</td>
+                    <td className="px-3 py-1.5 truncate max-w-[10rem]">
+                      <OwnerBadge owner={asset.owner} customerName={asset.customerName} t={t} />
+                    </td>
                     <td className="px-3 py-1.5 text-text-muted truncate max-w-[12rem]">{asset.assetType ?? '—'}</td>
                     <td className="px-3 py-1.5 truncate max-w-[14rem]">
                       {asset.operatingSystem

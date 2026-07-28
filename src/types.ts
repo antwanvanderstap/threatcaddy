@@ -669,6 +669,14 @@ export interface Asset {
   purchasedAt?: number;
   installedAt?: number;
   sourceUpdatedAt?: number;
+  /**
+   * Whose asset this is. Declared at import (a CMDB export is per-organization)
+   * or set by an analyst — never derived from the CSV, which carries no
+   * organization column.
+   */
+  owner?: AssetOwnerType;
+  /** Which customer, when `owner` is 'customer'. */
+  customerName?: string;
   /** Where this record came from, e.g. the imported file name. */
   source?: string;
   importedAt: number;
@@ -693,6 +701,15 @@ export interface Asset {
   createdAt: number;
   updatedAt: number;
 }
+
+/**
+ * Who an asset belongs to.
+ *
+ * `unknown` is the deliberate default rather than assuming `mssp`: in an MSSP
+ * inventory an unlabelled asset is an open question, and silently claiming it
+ * as your own would misattribute a customer's exposure to you.
+ */
+export type AssetOwnerType = 'mssp' | 'customer' | 'unknown';
 
 /**
  * Asset fields an analyst is allowed to correct.

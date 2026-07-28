@@ -540,6 +540,8 @@ export function sanitizeAsset(raw: unknown): Asset | null {
     purchasedAt: optNum(r.purchasedAt),
     installedAt: optNum(r.installedAt),
     sourceUpdatedAt: optNum(r.sourceUpdatedAt),
+    owner: r.owner === 'mssp' || r.owner === 'customer' ? r.owner : 'unknown',
+    customerName: optStr(r.customerName),
     source: optStr(r.source),
     importedAt: num(r.importedAt, num(r.createdAt, Date.now())),
     overrides: sanitizeAssetOverrides(r.overrides),

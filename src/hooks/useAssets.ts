@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { nanoid } from 'nanoid';
 import { db } from '../db';
-import type { Asset, OverridableAssetField } from '../types';
+import type { Asset, AssetOwnerType, OverridableAssetField } from '../types';
+import { normalizeOwnership } from '../lib/asset-ownership';
 import { setOverride, clearOverride, type SetOverrideOptions } from '../lib/asset-overrides';
 import { purgeOldTrash } from '../lib/trash-purge';
 import { parseAssetCSV, type AssetImportResult } from '../lib/asset-import';
@@ -83,13 +84,15 @@ export function useAssets() {
   /** Import a CMDB CSV export, upserting against the existing inventory. */
   const importAssetCSV = useCallback(async (
     text: string,
-    opts: { source?: string } = {},
+    opts: { source?: string; owner?: AssetOwnerType; customerName?: string } = {},
   ): Promise<AssetImportResult> => {
     const { getCurrentUserName } = await import('../lib/utils');
     const current = await db.assets.toArray();
     const result = parseAssetCSV(text, current, {
       source: opts.source,
       createdBy: getCurrentUserName(),
+      owner: opts.owner,
+      customerName: opts.customerName,
     });
     if (result.assets.length > 0) await db.assets.bulkPut(result.assets);
     await loadAssets();
@@ -119,6 +122,27 @@ export function useAssets() {
     if (!asset) return;
     await updateAsset(assetId, { overrides: clearOverride(asset, field) });
   }, [assets, updateAsset]);
+
+  /**
+   * Assign ownership to many assets at once.
+   *
+   * Ownership is analyst-declared rather than imported, so it is written
+   * directly rather than through the correction overlay — there is no CMDB
+   * value underneath for it to be layered over.
+   */
+  const assignOwnership = useCallback(async (
+    assetIds: string[],
+    owner: AssetOwnerType,
+    customerName?: string,
+  ): Promise<number> => {
+    if (assetIds.length === 0) return 0;
+    const patch = { ...normalizeOwnership(owner, customerName), updatedAt: Date.now() };
+    await db.transaction('rw', db.assets, async () => {
+      for (const id of assetIds) await db.assets.update(id, patch);
+    });
+    setAssets((prev) => prev.map((a) => (assetIds.includes(a.id) ? { ...a, ...patch } : a)));
+    return assetIds.length;
+  }, []);
 
   /** Analyst commentary — never touched by an import, so stored directly. */
   const setAnalystNotes = useCallback(async (assetId: string, notes: string) => {
@@ -168,6 +192,7 @@ export function useAssets() {
     unlinkAssetFromFolder,
     setAssetField,
     revertAssetField,
+    assignOwnership,
     setAnalystNotes,
     assetCounts,
     reload: loadAssets,

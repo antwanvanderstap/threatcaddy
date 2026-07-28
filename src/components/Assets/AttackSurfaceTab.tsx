@@ -81,6 +81,24 @@ export function AttackSurfaceTab({ assets, now, onOpenAsset, t }: AttackSurfaceT
               );
             })}
           </div>
+          {(surface.atRiskOwners.mssp > 0 || surface.atRiskOwners.customer > 0 || surface.atRiskOwners.unknown > 0) && (
+            <p className="text-xs">
+              <span className="text-text-muted">{t('surface.atRiskOwners')}</span>{' '}
+              {surface.atRiskOwners.mssp > 0 && (
+                <span className="text-accent-blue">{t('surface.ownMssp', { count: surface.atRiskOwners.mssp })}</span>
+              )}
+              {Object.entries(surface.atRiskOwners.byCustomer)
+                .sort((a, b) => b[1] - a[1])
+                .map(([name, count]) => (
+                  <span key={name} className="ml-2">{name} <strong>{count}</strong></span>
+                ))}
+              {surface.atRiskOwners.unknown > 0 && (
+                <span className="ml-2 text-accent-amber">
+                  {t('surface.ownUnlabelled', { count: surface.atRiskOwners.unknown })}
+                </span>
+              )}
+            </p>
+          )}
           <p className="text-xs text-text-muted">
             {t('surface.summary', {
               atRisk: surface.atRiskAssetIds.length,
@@ -173,6 +191,7 @@ export function AttackSurfaceTab({ assets, now, onOpenAsset, t }: AttackSurfaceT
                 <tr className="text-left text-text-muted">
                   <th className="px-3 py-2 font-medium">{t('surface.col.product')}</th>
                   <th className="px-3 py-2 font-medium">{t('surface.col.assets')}</th>
+                  <th className="px-3 py-2 font-medium">{t('surface.col.owners')}</th>
                   <th className="px-3 py-2 font-medium">{t('surface.col.support')}</th>
                   <th className="px-3 py-2 font-medium">{t('surface.col.cpe')}</th>
                 </tr>
@@ -194,6 +213,20 @@ export function AttackSurfaceTab({ assets, now, onOpenAsset, t }: AttackSurfaceT
       </div>
     </div>
   );
+}
+
+/** Compact "who runs this" cell: MSSP count, then customers by size. */
+function ownerSummary(
+  exposure: ProductExposure,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string {
+  const parts: string[] = [];
+  if (exposure.owners.mssp > 0) parts.push(`${t('owner.mssp')} ${exposure.owners.mssp}`);
+  for (const [name, count] of Object.entries(exposure.owners.byCustomer).sort((a, b) => b[1] - a[1])) {
+    parts.push(`${name} ${count}`);
+  }
+  if (exposure.owners.unknown > 0) parts.push(`${t('owner.unknown')} ${exposure.owners.unknown}`);
+  return parts.join(' · ') || '—';
 }
 
 function ExposureRow({
@@ -223,6 +256,7 @@ function ExposureRow({
         </span>
       </td>
       <td className="px-3 py-1.5 font-medium">{exposure.assetIds.length}</td>
+      <td className="px-3 py-1.5 text-text-muted truncate max-w-[14rem]">{ownerSummary(exposure, t)}</td>
       <td className="px-3 py-1.5 text-text-muted">{supportText}</td>
       <td className="px-3 py-1.5 font-mono text-text-muted truncate max-w-[20rem]" title={exposure.cpe}>
         {exposure.cpe}

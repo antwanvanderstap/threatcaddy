@@ -1,6 +1,7 @@
 import Papa from 'papaparse';
 import { nanoid } from 'nanoid';
-import type { Asset } from '../types';
+import type { Asset, AssetOwnerType } from '../types';
+import { normalizeOwnership } from './asset-ownership';
 import { normalizeMac, parseIPv4 } from './asset-correlation';
 
 export const MAX_ASSET_ROWS = 50_000;
@@ -125,7 +126,7 @@ export function assetIdentityKey(asset: Pick<Asset, 'externalId' | 'serialNumber
 /** Map one parsed CSV row to an Asset draft. Returns undefined for unusable rows. */
 export function rowToAsset(
   row: Record<string, string>,
-  opts: { source?: string; importedAt: number; createdBy?: string },
+  opts: { source?: string; importedAt: number; createdBy?: string; owner?: AssetOwnerType; customerName?: string },
 ): Omit<Asset, 'id'> | undefined {
   const name = pick(row, 'name');
   if (!name) return undefined;
@@ -166,6 +167,7 @@ export function rowToAsset(
     purchasedAt: parseDate(pick(row, 'purchasedAt')),
     installedAt: parseDate(pick(row, 'installedAt')),
     sourceUpdatedAt: parseDate(pick(row, 'sourceUpdatedAt')),
+    ...normalizeOwnership(opts.owner ?? 'unknown', opts.customerName),
     source: opts.source,
     importedAt: now,
     linkedFolderIds: [],
@@ -185,7 +187,16 @@ export function rowToAsset(
 export function parseAssetCSV(
   text: string,
   existing: Asset[] = [],
-  opts: { source?: string; createdBy?: string; now?: number; includeNonTechnical?: boolean } = {},
+  opts: {
+    source?: string;
+    createdBy?: string;
+    now?: number;
+    includeNonTechnical?: boolean;
+    /** Declared owner for this file. A CMDB export is per-organization, so
+     *  ownership is stated at import rather than read from a column. */
+    owner?: AssetOwnerType;
+    customerName?: string;
+  } = {},
 ): AssetImportResult {
   const errors: string[] = [];
   const importedAt = opts.now ?? Date.now();
@@ -218,7 +229,13 @@ export function parseAssetCSV(
   let skippedNonTechnical = 0;
 
   for (const row of rows) {
-    const draft = rowToAsset(row, { source: opts.source, importedAt, createdBy: opts.createdBy });
+    const draft = rowToAsset(row, {
+      source: opts.source,
+      importedAt,
+      createdBy: opts.createdBy,
+      owner: opts.owner,
+      customerName: opts.customerName,
+    });
     if (!draft) {
       skipped++;
       continue;
@@ -254,6 +271,12 @@ export function parseAssetCSV(
         // discard investigation findings on the next CMDB sync.
         overrides: prior.overrides,
         analystNotes: prior.analystNotes,
+        // An import that declares an owner is authoritative for it (you are
+        // re-importing that organization's file). One that does not must leave
+        // an existing assignment alone rather than resetting it to unknown.
+        ...(opts.owner
+          ? normalizeOwnership(opts.owner, opts.customerName)
+          : { owner: prior.owner, customerName: prior.customerName }),
         trashed: prior.trashed,
         trashedAt: prior.trashedAt,
         archived: prior.archived,
