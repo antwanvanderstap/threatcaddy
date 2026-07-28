@@ -70,7 +70,7 @@ export function useFolders() {
   }, []);
 
   const deleteFolderWithContents = useCallback(async (id: string) => {
-    await db.transaction('rw', [db.folders, db.notes, db.tasks, db.timelineEvents, db.whiteboards, db.standaloneIOCs, db.evidenceItems, db.assets, db.chatThreads, db.agentActions, db.agentDeployments, db.agentMeetings], async () => {
+    await db.transaction('rw', [db.folders, db.notes, db.tasks, db.timelineEvents, db.whiteboards, db.standaloneIOCs, db.evidenceItems, db.assets, db.caseUpdates, db.chatThreads, db.agentActions, db.agentDeployments, db.agentMeetings], async () => {
       // Collect IDs of entities in this folder (needed for orphan link cleanup)
       const [notesInFolder, tasksInFolder, eventsInFolder] = await Promise.all([
         db.notes.where('folderId').equals(id).primaryKeys(),
@@ -90,6 +90,8 @@ export function useFolders() {
         db.whiteboards.where('folderId').equals(id).delete(),
         db.standaloneIOCs.where('folderId').equals(id).delete(),
         db.evidenceItems.where('folderId').equals(id).delete(),
+        // Unlike assets, a case log is investigation content and goes with it.
+        db.caseUpdates.where('folderId').equals(id).delete(),
         db.chatThreads.where('folderId').equals(id).delete(),
         db.agentActions.where('investigationId').equals(id).delete(),
         db.agentDeployments.where('investigationId').equals(id).delete(),

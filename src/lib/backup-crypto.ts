@@ -34,6 +34,7 @@ export interface BackupPayload {
     standaloneIOCs?: unknown[];
     evidenceItems?: unknown[];
     assets?: unknown[];
+    caseUpdates?: unknown[];
     chatThreads?: unknown[];
     agentActions?: unknown[];
     agentProfiles?: unknown[];

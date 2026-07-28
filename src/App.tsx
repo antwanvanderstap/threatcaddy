@@ -21,6 +21,7 @@ import { useWhiteboards } from './hooks/useWhiteboards';
 import { useStandaloneIOCs } from './hooks/useStandaloneIOCs';
 import { useEvidenceItems } from './hooks/useEvidenceItems';
 import { useAssets } from './hooks/useAssets';
+import { useCaseUpdates } from './hooks/useCaseUpdates';
 import { useChats } from './hooks/useChats';
 import { useFolders } from './hooks/useFolders';
 import { useTags } from './hooks/useTags';
@@ -33,6 +34,7 @@ const PlaybookPicker = lazy(() => import('./components/Playbooks/PlaybookPicker'
 const OperationNameGenerator = lazy(() => import('./components/Common/OperationNameGenerator').then(m => ({ default: m.OperationNameGenerator })));
 const EvidenceView = lazy(() => import('./components/Evidence/EvidenceView').then(m => ({ default: m.EvidenceView })));
 const AssetView = lazy(() => import('./components/Assets/AssetView').then(m => ({ default: m.AssetView })));
+const CaseLogView = lazy(() => import('./components/Investigation/CaseLogView').then(m => ({ default: m.CaseLogView })));
 const ProductView = lazy(() => import('./components/Products/ProductView').then(m => ({ default: m.ProductView })));
 import { useActivityLog } from './hooks/useActivityLog';
 import { ActivityLogContext } from './hooks/ActivityLogContext';
@@ -42,7 +44,7 @@ import { clipBuffer } from './lib/clipBuffer';
 import { formatBytes, openFilePicker, getDroppedFiles, dispatchFile, type FileOpenDetail } from './lib/file-handler';
 import { hasPendingChanges } from './lib/pending-changes';
 import { useInvestigationData } from './hooks/useInvestigationData';
-import type { ConfidenceLevel, Note, StandaloneIOC, Task, TimelineEvent, ChatThread } from './types';
+import type { ConfidenceLevel, IncidentPhase, Note, StandaloneIOC, Task, TimelineEvent, ChatThread } from './types';
 import { DEFAULT_QUICK_LINKS } from './types';
 const DashboardView = lazy(() => import('./components/Dashboard/DashboardView').then(m => ({ default: m.DashboardView })));
 import { FileText, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
@@ -1422,6 +1424,16 @@ const AppInner = memo(function AppInner({
   }
   else if (selectedTag) listTitle = `#${selectedTag}`;
 
+  // Case log — scoped to the open investigation.
+  const caseUpdatesHook = useCaseUpdates(selectedFolderId);
+
+  const handleAdvancePhase = useCallback(async (phase: IncidentPhase) => {
+    if (!selectedFolder) return;
+    const { advancePhase } = await import('./lib/case-updates');
+    await updateFolder(selectedFolder.id, advancePhase(selectedFolder, phase, Date.now()));
+    await reloadFolders();
+  }, [selectedFolder, updateFolder, reloadFolders]);
+
   const sidebarProps = useMemo(() => ({
     noteCounts: { ...noteCounts, trashed: combinedTrashedCount, archived: combinedArchivedCount },
     taskCounts: tasks.taskCounts,
@@ -1441,8 +1453,9 @@ const AppInner = memo(function AppInner({
     investigationScopedCounts,
     chatCount: chatsHook.threadCounts.total,
     assetCount: assetsHook.assetCounts.total || undefined,
+    caseUpdateCount: caseUpdatesHook.updates.length || undefined,
     serverConnected: auth.connected,
-  }), [noteCounts, combinedTrashedCount, combinedArchivedCount, tasks.taskCounts, timeline.eventCounts, timelines, selectedTimelineId, loggedCreateTimeline, loggedDeleteTimeline, updateTimeline, timelineEventCounts, whiteboards, selectedFolderId, selectedWhiteboardId, loggedCreateWhiteboard, loggedDeleteWhiteboard, updateWhiteboard, whiteboardCounts, updateTag, loggedDeleteTag, investigationScopedCounts, chatsHook.threadCounts.total, assetsHook.assetCounts.total, auth.connected]);
+  }), [noteCounts, combinedTrashedCount, combinedArchivedCount, tasks.taskCounts, timeline.eventCounts, timelines, selectedTimelineId, loggedCreateTimeline, loggedDeleteTimeline, updateTimeline, timelineEventCounts, whiteboards, selectedFolderId, selectedWhiteboardId, loggedCreateWhiteboard, loggedDeleteWhiteboard, updateWhiteboard, whiteboardCounts, updateTag, loggedDeleteTag, investigationScopedCounts, chatsHook.threadCounts.total, assetsHook.assetCounts.total, caseUpdatesHook.updates.length, auth.connected]);
 
   // CaddyAgent hook — manages auto-repeating loop
   const caddyAgent = useCaddyAgent({
@@ -1816,6 +1829,16 @@ const AppInner = memo(function AppInner({
             onImportFiles={handleImportEvidence}
             onDeduplicate={handleDeduplicateEvidence}
             onOpenChat={() => setActiveView('chat')}
+          />
+        ) : activeView === 'case-log' ? (
+          <CaseLogView
+            folder={selectedFolder}
+            updates={caseUpdatesHook.updates}
+            onAdd={caseUpdatesHook.addUpdate}
+            onEdit={caseUpdatesHook.editUpdate}
+            onDelete={caseUpdatesHook.deleteUpdate}
+            onAdvancePhase={handleAdvancePhase}
+            now={Date.now()}
           />
         ) : activeView === 'assets' ? (
           <AssetView

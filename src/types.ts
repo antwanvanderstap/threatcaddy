@@ -131,6 +131,29 @@ export interface Task {
 
 export type InvestigationStatus = 'active' | 'closed' | 'archived';
 
+/**
+ * Incident severity. Ordered most-urgent first so a queue sorts naturally.
+ * `none` means the case has not been triaged as an incident at all — an
+ * investigation and an untriaged incident are different states.
+ */
+export type IncidentSeverity = 'critical' | 'high' | 'medium' | 'low' | 'none';
+
+export const INCIDENT_SEVERITIES: readonly IncidentSeverity[] = ['critical', 'high', 'medium', 'low', 'none'];
+
+/**
+ * Canonical NIST-style response phase for an incident.
+ *
+ * Deliberately separate from `PlaybookStep.phase`, which is free text and
+ * playbook-specific ("Static Analysis", "Legal"). This is the coarse lifecycle
+ * stage the case as a whole is in, independent of which playbook is running.
+ */
+export type IncidentPhase =
+  | 'triage' | 'detection' | 'containment' | 'eradication' | 'recovery' | 'lessons-learned';
+
+export const INCIDENT_PHASES: readonly IncidentPhase[] = [
+  'triage', 'detection', 'containment', 'eradication', 'recovery', 'lessons-learned',
+];
+
 export type ClosureResolution = 'resolved' | 'false-positive' | 'escalated' | 'duplicate' | 'inconclusive';
 
 export const CLOSURE_RESOLUTION_LABELS: Record<ClosureResolution, string> = createLabelProxy(
@@ -172,6 +195,18 @@ export interface Folder {
   closureResolution?: ClosureResolution;
   closedReason?: string;
   closedAt?: number;
+  /** Incident triage severity. Absent or 'none' means not triaged as an incident. */
+  severity?: IncidentSeverity;
+  /** Coarse response lifecycle stage; see IncidentPhase. */
+  irPhase?: IncidentPhase;
+  /** Incident clock. Set as the response reaches each milestone; used to
+   *  report time-to-contain and time-to-recover after the fact. */
+  detectedAt?: number;
+  containedAt?: number;
+  eradicatedAt?: number;
+  recoveredAt?: number;
+  /** Who is running the response. */
+  incidentCommander?: string;
   createdBy?: string;
   updatedBy?: string;
   localOnly?: boolean;
@@ -207,7 +242,7 @@ export interface BackupDestination {
 }
 
 /** Top-level view/page the user can navigate to. */
-export type ViewMode = 'dashboard' | 'notes' | 'tasks' | 'timeline' | 'whiteboard' | 'evidence' | 'products' | 'assets' | 'activity' | 'graph' | 'ioc-stats' | 'chat' | 'caddyshack' | 'agent' | 'investigations';
+export type ViewMode = 'dashboard' | 'notes' | 'tasks' | 'timeline' | 'whiteboard' | 'evidence' | 'products' | 'assets' | 'case-log' | 'activity' | 'graph' | 'ioc-stats' | 'chat' | 'caddyshack' | 'agent' | 'investigations';
 export type EditorMode = 'edit' | 'preview' | 'split';
 export type TaskViewMode = 'list' | 'kanban';
 
@@ -1207,6 +1242,52 @@ export interface PlaybookTemplate {
   updatedAt: number;
 }
 
+/**
+ * What a case update records. Typed so the log can be filtered to "what did we
+ * do" versus "what did we find" — the distinction that matters when writing up
+ * an incident afterwards.
+ */
+export type CaseUpdateType =
+  | 'status' | 'finding' | 'action' | 'escalation' | 'containment' | 'handover';
+
+export const CASE_UPDATE_TYPES: readonly CaseUpdateType[] = [
+  'status', 'finding', 'action', 'escalation', 'containment', 'handover',
+];
+
+/** A prior revision of a case update, kept so corrections stay auditable. */
+export interface CaseUpdateRevision {
+  body: string;
+  editedAt: number;
+  editedBy?: string;
+}
+
+/**
+ * A single entry in an investigation's case log.
+ *
+ * Append-only in spirit: entries are never silently rewritten. Editing keeps
+ * the superseded text in `revisions`, because a case log is a contemporaneous
+ * record and an untraceable edit would undermine its value as evidence.
+ */
+export interface CaseUpdate {
+  id: string;
+  folderId: string;
+  type: CaseUpdateType;
+  body: string;
+  /** Response phase at the time of writing, when the case has one. */
+  phase?: IncidentPhase;
+  authorName?: string;
+  createdBy?: string;
+  createdAt: number;
+  updatedAt: number;
+  /** Superseded versions, oldest first. Absent when never edited. */
+  revisions?: CaseUpdateRevision[];
+  /** Entities this update refers to. */
+  linkedNoteIds?: string[];
+  linkedTaskIds?: string[];
+  linkedIOCIds?: string[];
+  linkedAssetIds?: string[];
+}
+
 export interface ExportData {
   version: 1;
   exportedAt: number;
@@ -1220,6 +1301,7 @@ export interface ExportData {
   standaloneIOCs?: StandaloneIOC[];
   evidenceItems?: EvidenceItem[];
   assets?: Asset[];
+  caseUpdates?: CaseUpdate[];
   chatThreads?: ChatThread[];
   agentActions?: AgentAction[];
   agentProfiles?: AgentProfile[];

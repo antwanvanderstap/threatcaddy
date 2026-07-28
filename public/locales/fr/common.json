@@ -216,5 +216,6 @@
   "header.caddylabs": "CaddyLabs",
   "sidebar.evidence": "Preuves",
   "sidebar.products": "Produits",
-  "sidebar.assets": "Actifs"
+  "sidebar.assets": "Actifs",
+  "sidebar.caseLog": "Journal de cas"
 }

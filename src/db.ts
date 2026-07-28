@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { Note, Task, Folder, Tag, TimelineEvent, Timeline, Whiteboard, ActivityLogEntry, StandaloneIOC, EvidenceItem, Asset, ChatThread, NoteTemplate, PlaybookTemplate, Checkpoint, CustomSlashCommand, AgentAction, AgentProfile, AgentDeployment, AgentMeeting, EvidenceKind, EvidenceExtractionStatus } from './types';
+import type { Note, Task, Folder, Tag, TimelineEvent, Timeline, Whiteboard, ActivityLogEntry, StandaloneIOC, EvidenceItem, Asset, CaseUpdate, ChatThread, NoteTemplate, PlaybookTemplate, Checkpoint, CustomSlashCommand, AgentAction, AgentProfile, AgentDeployment, AgentMeeting, EvidenceKind, EvidenceExtractionStatus } from './types';
 import type { IntegrationTemplate, InstalledIntegration, IntegrationRun } from './types/integration-types';
 import { installEncryptionMiddleware } from './lib/encryptionMiddleware';
 
@@ -15,6 +15,7 @@ const db = new Dexie('ThreatCaddyDB') as Dexie & {
   standaloneIOCs: EntityTable<StandaloneIOC, 'id'>;
   evidenceItems: EntityTable<EvidenceItem, 'id'>;
   assets: EntityTable<Asset, 'id'>;
+  caseUpdates: EntityTable<CaseUpdate, 'id'>;
   chatThreads: EntityTable<ChatThread, 'id'>;
   noteTemplates: EntityTable<NoteTemplate, 'id'>;
   playbookTemplates: EntityTable<PlaybookTemplate, 'id'>;
@@ -312,6 +313,13 @@ db.version(34).stores({
 // through IndexedDB rather than scanning the whole inventory in memory.
 db.version(35).stores({
   assets: 'id, externalId, name, hostname, primaryIp, macAddress, serialNumber, assetType, status, operatingSystem, owner, customerName, importedAt, trashed, archived, createdAt, updatedAt, *tags, *ipAddresses, *macAddresses, *linkedFolderIds',
+});
+
+// Version 36: incident response case log.
+// Indexed by folderId+createdAt so a case log loads in chronological order
+// without scanning every update in every investigation.
+db.version(36).stores({
+  caseUpdates: 'id, folderId, type, phase, createdAt, updatedAt, [folderId+createdAt]',
 });
 
 function evidenceKindFromExtension(value: string): EvidenceKind {

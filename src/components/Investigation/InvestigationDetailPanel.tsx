@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Briefcase, FileBarChart, Share2, Cloud, CloudOff, Archive, Trash2, Printer, BookOpen } from 'lucide-react';
-import type { Folder, InvestigationStatus, ClosureResolution, PlaybookStep } from '../../types';
+import type { Folder, InvestigationStatus, ClosureResolution, PlaybookStep, IncidentSeverity } from '../../types';
+import { INCIDENT_SEVERITIES } from '../../types';
 import { NOTE_COLORS, CLOSURE_RESOLUTION_LABELS } from '../../types';
 import { TagInput } from '../Common/TagInput';
 import { ConfirmDialog } from '../Common/ConfirmDialog';
@@ -61,6 +62,7 @@ export function InvestigationDetailPanel({
   onDelete,
 }: InvestigationDetailPanelProps) {
   const { t } = useTranslation('investigations');
+  const { t: tIncident } = useTranslation('incident');
   const [name, setName] = useState(folder.name);
   const [description, setDescription] = useState(folder.description || '');
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
@@ -145,6 +147,31 @@ export function InvestigationDetailPanel({
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-accent h-20 resize-none"
               placeholder={t('detail.descriptionPlaceholder')}
             />
+          </div>
+
+          {/* Incident severity — set this to triage a case as an incident. */}
+          <div>
+            <label className="block text-xs font-medium text-gray-400 mb-1">{tIncident('severity.label')}</label>
+            <div className="flex gap-1 flex-wrap">
+              {INCIDENT_SEVERITIES.map((value: IncidentSeverity) => (
+                <button
+                  key={value}
+                  onClick={() => onUpdate(folder.id, { severity: value })}
+                  className={cn(
+                    'px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors border',
+                    (folder.severity ?? 'none') === value
+                      ? value === 'critical' ? 'bg-red-600/20 text-red-400 border-red-600/40'
+                        : value === 'high' ? 'bg-orange-600/20 text-orange-400 border-orange-600/40'
+                        : value === 'medium' ? 'bg-yellow-600/20 text-yellow-400 border-yellow-600/40'
+                        : value === 'low' ? 'bg-blue-600/20 text-blue-400 border-blue-600/40'
+                        : 'bg-gray-600/20 text-gray-300 border-gray-600/40'
+                      : 'bg-gray-800 text-gray-500 hover:text-gray-300 border-gray-700'
+                  )}
+                >
+                  {tIncident(`severity.${value}`)}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Status */}

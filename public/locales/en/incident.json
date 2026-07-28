@@ -1,0 +1,53 @@
+{
+  "header.title": "Case log",
+
+  "phase.label": "Phase",
+  "phase.triage": "Triage",
+  "phase.detection": "Detection",
+  "phase.containment": "Containment",
+  "phase.eradication": "Eradication",
+  "phase.recovery": "Recovery",
+  "phase.lessons-learned": "Lessons learned",
+
+  "clock.timeToContain": "Time to contain:",
+  "clock.timeToRecover": "Time to recover:",
+  "duration.minutes": "{{count}} min",
+  "duration.hours": "{{count}} h",
+  "duration.days": "{{count}} d",
+
+  "type.status": "Status",
+  "type.finding": "Finding",
+  "type.action": "Action taken",
+  "type.escalation": "Escalation",
+  "type.containment": "Containment",
+  "type.handover": "Handover",
+
+  "composer.placeholder": "What changed? Ctrl+Enter to post.",
+  "composer.post": "Post",
+
+  "filter.search": "Search the log…",
+  "filter.noResults": "No updates match this filter.",
+
+  "empty.noInvestigation": "No investigation selected",
+  "empty.noInvestigationDesc": "Open an investigation to keep a case log for it.",
+  "empty.noUpdates": "No case updates yet",
+  "empty.noUpdatesDesc": "Record what you find and what you do as the response unfolds. Entries are timestamped and attributed, and edits keep the original text.",
+
+  "entry.edit": "Edit",
+  "entry.delete": "Delete",
+  "entry.save": "Save",
+  "entry.cancel": "Cancel",
+  "entry.edited": "edited",
+  "entry.editedTitle": "{{count}} earlier version(s) kept",
+  "entry.editKeepsHistory": "The original text is kept in the revision history.",
+  "entry.revisionHistory": "Revision history",
+  "entry.hideHistory": "Hide history",
+
+  "severity.label": "Severity",
+  "severity.critical": "Critical",
+  "severity.high": "High",
+  "severity.medium": "Medium",
+  "severity.low": "Low",
+  "severity.none": "Not triaged",
+  "commander.label": "Incident commander"
+}

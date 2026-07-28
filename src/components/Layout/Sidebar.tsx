@@ -3,7 +3,7 @@ import {
   FileText, ListChecks, Clock, Trash2, Briefcase,
   Archive, Settings as SettingsIcon,
   PanelLeftClose, PanelLeft, Github, Download, Chrome, PenTool, Activity, Network, Search, Shield,
-  LayoutDashboard, MessageSquare, MessagesSquare, ChevronLeft, Bot, Paperclip, FileOutput, HardDrive,
+  LayoutDashboard, MessageSquare, MessagesSquare, ChevronLeft, Bot, Paperclip, FileOutput, HardDrive, ClipboardList,
 } from 'lucide-react';
 import type { Timeline, Whiteboard, ViewMode } from '../../types';
 import { cn } from '../../lib/utils';
@@ -37,6 +37,7 @@ interface SidebarProps {
   investigationScopedCounts?: { notes: number; tasks: number; events: number; whiteboards: number; iocs: number } | null;
   chatCount?: number;
   assetCount?: number;
+  caseUpdateCount?: number;
   agentStatus?: 'idle' | 'running' | 'waiting' | 'paused' | 'error';
   onToggleAgent?: () => void;
   serverConnected?: boolean;
@@ -64,6 +65,7 @@ export function Sidebar({
   investigationScopedCounts,
   chatCount,
   assetCount,
+  caseUpdateCount,
   agentStatus,
   onToggleAgent,
 }: SidebarProps) {
@@ -109,6 +111,7 @@ export function Sidebar({
     { view: 'evidence', icon: Paperclip, label: t('sidebar.evidence') },
     { view: 'products', icon: FileOutput, label: t('sidebar.products') },
     { view: 'assets', icon: HardDrive, label: t('sidebar.assets'), badge: assetCount },
+    { view: 'case-log', icon: ClipboardList, label: t('sidebar.caseLog'), badge: caseUpdateCount },
     { view: 'ioc-stats', icon: Search, label: t('sidebar.iocs'), badge: investigationScopedCounts ? investigationScopedCounts.iocs : undefined, badgeColor: 'bg-accent-green' },
     { view: 'graph', icon: Network, label: t('sidebar.graph') },
     { view: 'activity', icon: Activity, label: t('sidebar.activity'), dataTour: 'activity' },
@@ -378,6 +381,14 @@ export function Sidebar({
           label={t('sidebar.evidence')}
           active={activeView === 'evidence'}
           onClick={() => nav(() => navToView('evidence'))}
+          scopedColor={selectedFolder?.color || undefined}
+        />
+        <NavItem
+          icon={<ClipboardList size={16} />}
+          label={t('sidebar.caseLog')}
+          active={activeView === 'case-log'}
+          onClick={() => nav(() => navToView('case-log'))}
+          badge={caseUpdateCount}
           scopedColor={selectedFolder?.color || undefined}
         />
         <NavItem

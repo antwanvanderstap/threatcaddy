@@ -321,5 +321,6 @@
   "header.caddylabs": "CaddyLabs",
   "sidebar.evidence": "증거",
   "sidebar.products": "제품",
-  "sidebar.assets": "자산"
+  "sidebar.assets": "자산",
+  "sidebar.caseLog": "케이스 로그"
 }

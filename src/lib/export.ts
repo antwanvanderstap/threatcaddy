@@ -1,8 +1,9 @@
 import { db } from '../db';
-import type { Note, Task, Folder, Tag, TimelineEvent, Timeline, Whiteboard, StandaloneIOC, EvidenceItem, Asset, ChatThread, ChatMessage, NoteTemplate, PlaybookTemplate, PlaybookStep, ExportData, TimelineExportData, TimelineEventType, ConfidenceLevel, IOCAnalysis, IOCEntry, IOCRelationship, TaskComment, NoteAnnotation, QuickLink, LLMProvider, IOCType, TemplateSource, PlaybookStepEntity, AgentAction, EvidenceExtractionStatus, EvidenceKind, ProductBaselineAsset, ProductBaselineMetadata, ProductBaselineSourceDocument, ProductBaselineTestFixture } from '../types';
+import type { Note, Task, Folder, Tag, TimelineEvent, Timeline, Whiteboard, StandaloneIOC, EvidenceItem, Asset, CaseUpdate, CaseUpdateType, ChatThread, ChatMessage, NoteTemplate, PlaybookTemplate, PlaybookStep, ExportData, TimelineExportData, TimelineEventType, ConfidenceLevel, IOCAnalysis, IOCEntry, IOCRelationship, TaskComment, NoteAnnotation, QuickLink, LLMProvider, IOCType, TemplateSource, PlaybookStepEntity, AgentAction, EvidenceExtractionStatus, EvidenceKind, ProductBaselineAsset, ProductBaselineMetadata, ProductBaselineSourceDocument, ProductBaselineTestFixture } from '../types';
 import { TIMELINE_EVENT_TYPE_LABELS, CONFIDENCE_LEVELS, IOC_TYPE_LABELS } from '../types';
 import { nanoid } from 'nanoid';
 import { isOverridableField } from './asset-overrides';
+import { CASE_UPDATE_TYPES, INCIDENT_PHASES } from '../types';
 
 export async function exportJSON(): Promise<string> {
   // Load tables sequentially to reduce peak memory usage (avoids loading
@@ -18,6 +19,7 @@ export async function exportJSON(): Promise<string> {
   const standaloneIOCs = await db.standaloneIOCs.toArray();
   const evidenceItems = mergeEvidenceItemLists(await db.evidenceItems.toArray(), evidenceItemsFromNotes(allNotes));
   const assets = await db.assets.toArray();
+  const caseUpdates = await db.caseUpdates.toArray();
   const chatThreads = await db.chatThreads.toArray();
   const noteTemplates = await db.noteTemplates.toArray();
   const playbookTemplates = await db.playbookTemplates.toArray();
@@ -49,6 +51,7 @@ export async function exportJSON(): Promise<string> {
     standaloneIOCs,
     evidenceItems: evidenceItems.length > 0 ? evidenceItems : undefined,
     assets: assets.length > 0 ? assets : undefined,
+    caseUpdates: caseUpdates.length > 0 ? caseUpdates : undefined,
     chatThreads,
     agentActions: agentActions.length > 0 ? agentActions : undefined,
     agentProfiles: agentProfiles.length > 0 ? agentProfiles : undefined,
@@ -504,6 +507,42 @@ function sanitizeAssetOverrides(raw: unknown): Asset['overrides'] {
     };
   }
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+export function sanitizeCaseUpdate(raw: unknown): CaseUpdate | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const folderId = str(r.folderId);
+  // A case update with no investigation has nowhere to live; drop it rather
+  // than importing an orphan the UI can never surface.
+  if (!folderId) return null;
+  const type = str(r.type);
+  const phase = str(r.phase);
+  const now = Date.now();
+  return {
+    id: str(r.id),
+    folderId,
+    type: (CASE_UPDATE_TYPES as readonly string[]).includes(type) ? (type as CaseUpdateType) : 'status',
+    body: str(r.body),
+    phase: (INCIDENT_PHASES as readonly string[]).includes(phase) ? (phase as CaseUpdate['phase']) : undefined,
+    authorName: r.authorName != null ? str(r.authorName) : undefined,
+    createdBy: r.createdBy != null ? str(r.createdBy) : undefined,
+    createdAt: num(r.createdAt, now),
+    updatedAt: num(r.updatedAt, num(r.createdAt, now)),
+    revisions: Array.isArray(r.revisions)
+      ? r.revisions
+          .filter((rev): rev is Record<string, unknown> => !!rev && typeof rev === 'object')
+          .map((rev) => ({
+            body: str(rev.body),
+            editedAt: num(rev.editedAt, now),
+            editedBy: rev.editedBy != null ? str(rev.editedBy) : undefined,
+          }))
+      : undefined,
+    linkedNoteIds: Array.isArray(r.linkedNoteIds) ? strArr(r.linkedNoteIds) : undefined,
+    linkedTaskIds: Array.isArray(r.linkedTaskIds) ? strArr(r.linkedTaskIds) : undefined,
+    linkedIOCIds: Array.isArray(r.linkedIOCIds) ? strArr(r.linkedIOCIds) : undefined,
+    linkedAssetIds: Array.isArray(r.linkedAssetIds) ? strArr(r.linkedAssetIds) : undefined,
+  };
 }
 
 export function sanitizeAsset(raw: unknown): Asset | null {
@@ -1158,7 +1197,7 @@ function sanitizeQuickLink(raw: unknown): QuickLink | null {
   };
 }
 
-export async function importJSON(json: string): Promise<{ notes: number; tasks: number; folders: number; tags: number; timelineEvents: number; timelines: number; whiteboards: number; standaloneIOCs: number; evidenceItems: number; assets: number; chatThreads: number; noteTemplates: number; playbookTemplates: number; agentActions: number; agentProfiles: number; agentDeployments: number; agentMeetings: number }> {
+export async function importJSON(json: string): Promise<{ notes: number; tasks: number; folders: number; tags: number; timelineEvents: number; timelines: number; whiteboards: number; standaloneIOCs: number; evidenceItems: number; assets: number; caseUpdates: number; chatThreads: number; noteTemplates: number; playbookTemplates: number; agentActions: number; agentProfiles: number; agentDeployments: number; agentMeetings: number }> {
   if (json.length > MAX_IMPORT_SIZE) {
     throw new Error(`Backup file too large (max ${MAX_IMPORT_SIZE / 1024 / 1024} MB)`);
   }
@@ -1204,6 +1243,10 @@ export async function importJSON(json: string): Promise<{ notes: number; tasks: 
     .map(sanitizeAsset)
     .filter((a: Asset | null): a is Asset => a !== null && !!a.id);
 
+  const caseUpdates = (Array.isArray(data.caseUpdates) ? data.caseUpdates : [])
+    .map(sanitizeCaseUpdate)
+    .filter((u: CaseUpdate | null): u is CaseUpdate => u !== null && !!u.id);
+
   const chatThreads = (Array.isArray(data.chatThreads) ? data.chatThreads : [])
     .map(sanitizeChatThread)
     .filter((c: ChatThread | null): c is ChatThread => c !== null && !!c.id);
@@ -1240,7 +1283,7 @@ export async function importJSON(json: string): Promise<{ notes: number; tasks: 
   const importedDeployments = (Array.isArray(data.agentDeployments) ? data.agentDeployments : []).map(sanitizeAgentDeployment).filter(Boolean);
   const importedMeetings = (Array.isArray(data.agentMeetings) ? data.agentMeetings : []).map(sanitizeAgentMeeting).filter(Boolean);
 
-  await db.transaction('rw', [db.notes, db.tasks, db.folders, db.tags, db.timelineEvents, db.timelines, db.whiteboards, db.standaloneIOCs, db.evidenceItems, db.assets, db.chatThreads, db.noteTemplates, db.playbookTemplates, db.agentActions, db.agentProfiles, db.agentDeployments, db.agentMeetings], async () => {
+  await db.transaction('rw', [db.notes, db.tasks, db.folders, db.tags, db.timelineEvents, db.timelines, db.whiteboards, db.standaloneIOCs, db.evidenceItems, db.assets, db.caseUpdates, db.chatThreads, db.noteTemplates, db.playbookTemplates, db.agentActions, db.agentProfiles, db.agentDeployments, db.agentMeetings], async () => {
     await db.notes.clear();
     await db.tasks.clear();
     await db.folders.clear();
@@ -1251,6 +1294,7 @@ export async function importJSON(json: string): Promise<{ notes: number; tasks: 
     await db.standaloneIOCs.clear();
     await db.evidenceItems.clear();
     await db.assets.clear();
+    await db.caseUpdates.clear();
     await db.chatThreads.clear();
     await db.noteTemplates.clear();
     await db.playbookTemplates.clear();
@@ -1269,6 +1313,7 @@ export async function importJSON(json: string): Promise<{ notes: number; tasks: 
     await db.standaloneIOCs.bulkAdd(standaloneIOCs);
     if (evidenceItems.length > 0) await db.evidenceItems.bulkAdd(evidenceItems);
     if (assets.length > 0) await db.assets.bulkAdd(assets);
+    if (caseUpdates.length > 0) await db.caseUpdates.bulkAdd(caseUpdates);
     await db.chatThreads.bulkAdd(chatThreads);
     if (noteTemplatesRaw.length > 0) await db.noteTemplates.bulkAdd(noteTemplatesRaw);
     if (playbookTemplatesRaw.length > 0) await db.playbookTemplates.bulkAdd(playbookTemplatesRaw);
@@ -1299,6 +1344,7 @@ export async function importJSON(json: string): Promise<{ notes: number; tasks: 
     standaloneIOCs: standaloneIOCs.length,
     evidenceItems: evidenceItems.length,
     assets: assets.length,
+    caseUpdates: caseUpdates.length,
     chatThreads: chatThreads.length,
     noteTemplates: noteTemplatesRaw.length,
     playbookTemplates: playbookTemplatesRaw.length,

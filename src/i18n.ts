@@ -20,6 +20,7 @@ import chatEn from '../public/locales/en/chat.json';
 import dashboardEn from '../public/locales/en/dashboard.json';
 import evidenceEn from '../public/locales/en/evidence.json';
 import assetsEn from '../public/locales/en/assets.json';
+import incidentEn from '../public/locales/en/incident.json';
 import productsEn from '../public/locales/en/products.json';
 import execEn from '../public/locales/en/exec.json';
 import graphEn from '../public/locales/en/graph.json';
@@ -91,7 +92,7 @@ const isStandalone = typeof __STANDALONE__ !== 'undefined' && __STANDALONE__;
 const ALL_NS = [
   'common', 'labels', 'dates', 'analysis', 'encryption',
   'activity', 'agent', 'caddyshack', 'chat', 'dashboard',
-  'evidence', 'products', 'assets', 'exec', 'graph', 'import', 'integrations', 'investigations',
+  'evidence', 'products', 'assets', 'incident', 'exec', 'graph', 'import', 'integrations', 'investigations',
   'notes', 'playbooks', 'search', 'settings', 'tasks',
   'timeline', 'toast', 'tour', 'trash', 'whiteboard',
 ] as const;
@@ -102,7 +103,7 @@ const enResources = isStandalone ? {
   common: commonEn, labels: labelsEn, dates: datesEn, analysis: analysisEn,
   encryption: encryptionEn, activity: activityEn, agent: agentEn,
   caddyshack: caddyshackEn, chat: chatEn, dashboard: dashboardEn,
-  evidence: evidenceEn, products: productsEn, assets: assetsEn,
+  evidence: evidenceEn, products: productsEn, assets: assetsEn, incident: incidentEn,
   exec: execEn, graph: graphEn, import: importEn, integrations: integrationsEn,
   investigations: investigationsEn, notes: notesEn, playbooks: playbooksEn,
   search: searchEn, settings: settingsEn, tasks: tasksEn, timeline: timelineEn,

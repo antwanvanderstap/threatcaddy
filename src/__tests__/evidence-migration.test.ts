@@ -344,7 +344,7 @@ describe('v29→v32 evidence migration (non-destructive)', () => {
     await runMigration();
     // The evidence migration chain ends at v32; later versions (v33 assets)
     // add tables without touching evidence, so the DB opens at the latest.
-    expect(db.verno).toBe(35);
+    expect(db.verno).toBe(36);
   });
 
   it('full chain: a realistic mix survives — every seeded note is still present', async () => {
