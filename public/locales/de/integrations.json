@@ -3,64 +3,52 @@
   "builtin.vtIpLookup.description": "IP-Adresse bei VirusTotal abfragen, um Reputation, Geolokalisierung und Analysestatistiken abzurufen.",
   "builtin.vtIpLookup.config.apiKey.label": "API-Schlüssel",
   "builtin.vtIpLookup.config.apiKey.description": "Ihr VirusTotal-API-Schlüssel",
-
   "builtin.abuseipdbCheck.name": "AbuseIPDB-Prüfung",
   "builtin.abuseipdbCheck.description": "IP-Adresse in der AbuseIPDB-Datenbank auf Missbrauchsmeldungen und Konfidenz-Bewertung prüfen.",
   "builtin.abuseipdbCheck.config.apiKey.label": "API-Schlüssel",
   "builtin.abuseipdbCheck.config.apiKey.description": "Ihr AbuseIPDB-API-Schlüssel",
   "builtin.abuseipdbCheck.config.maxAgeInDays.label": "Max. Alter (Tage)",
   "builtin.abuseipdbCheck.config.maxAgeInDays.description": "Maximales Alter der einzuschließenden Berichte",
-
   "builtin.shodanHostInfo.name": "Shodan Host-Informationen",
   "builtin.shodanHostInfo.description": "Host-Informationen von Shodan abrufen, einschließlich offener Ports, Schwachstellen und Organisationsdetails.",
   "builtin.shodanHostInfo.config.apiKey.label": "API-Schlüssel",
   "builtin.shodanHostInfo.config.apiKey.description": "Ihr Shodan-API-Schlüssel",
-
   "builtin.slackWebhookNotify.name": "Slack-Webhook-Benachrichtigung",
   "builtin.slackWebhookNotify.description": "IOC-Warnungen über einen eingehenden Webhook mit umfangreicher Block-Kit-Formatierung an einen Slack-Kanal senden.",
   "builtin.slackWebhookNotify.config.webhookUrl.label": "Webhook-URL",
   "builtin.slackWebhookNotify.config.webhookUrl.description": "Eingehende Slack-Webhook-URL",
   "builtin.slackWebhookNotify.config.channel.label": "Kanal-Überschreibung",
   "builtin.slackWebhookNotify.config.channel.description": "Optionaler Kanal zum Posten (überschreibt Webhook-Standard)",
-
   "builtin.urlhausLookup.name": "URLhaus URL-Abfrage",
   "builtin.urlhausLookup.description": "URL bei URLhaus (abuse.ch) auf bekannte Malware-Verteilungsaktivitäten abfragen. Erfordert einen kostenlosen API-Schlüssel von auth.abuse.ch.",
   "builtin.urlhausLookup.config.apiKey.label": "Auth-Schlüssel",
   "builtin.urlhausLookup.config.apiKey.description": "Ihr abuse.ch-Auth-Schlüssel (kostenlos unter auth.abuse.ch)",
-
   "builtin.urlhausDomainLookup.name": "URLhaus Domain-Abfrage",
   "builtin.urlhausDomainLookup.description": "Domain bei URLhaus (abuse.ch) auf bekannte Malware-Verteilungs-URLs abfragen. Erfordert einen kostenlosen API-Schlüssel von auth.abuse.ch.",
   "builtin.urlhausDomainLookup.config.apiKey.label": "Auth-Schlüssel",
   "builtin.urlhausDomainLookup.config.apiKey.description": "Ihr abuse.ch-Auth-Schlüssel (kostenlos unter auth.abuse.ch)",
-
   "builtin.shodanInternetdb.name": "Shodan InternetDB",
   "builtin.shodanInternetdb.description": "Kostenlose IP-Anreicherung von Shodan — offene Ports, CVEs, Hostnamen und Tags. Kein API-Schlüssel erforderlich.",
-
   "builtin.vtDomainLookup.name": "VirusTotal Domain-Abfrage",
   "builtin.vtDomainLookup.description": "Domain bei VirusTotal auf Reputation, DNS-Einträge und Analysestatistiken abfragen.",
   "builtin.vtDomainLookup.config.apiKey.label": "API-Schlüssel",
   "builtin.vtDomainLookup.config.apiKey.description": "Ihr VirusTotal-API-Schlüssel",
-
   "builtin.vtHashLookup.name": "VirusTotal Hash-Abfrage",
   "builtin.vtHashLookup.description": "Datei-Hash (MD5/SHA1/SHA256) bei VirusTotal auf Malware-Erkennungsergebnisse abfragen.",
   "builtin.vtHashLookup.config.apiKey.label": "API-Schlüssel",
   "builtin.vtHashLookup.config.apiKey.description": "Ihr VirusTotal-API-Schlüssel",
-
   "builtin.threatfoxLookup.name": "ThreatFox IOC-Suche",
   "builtin.threatfoxLookup.description": "ThreatFox (abuse.ch) nach bekannten malware-assoziierten IOCs durchsuchen — C2-Server, Verteilungs-URLs, Payload-Hashes.",
   "builtin.threatfoxLookup.config.apiKey.label": "Auth-Schlüssel",
   "builtin.threatfoxLookup.config.apiKey.description": "Ihr abuse.ch-Auth-Schlüssel (kostenlos unter auth.abuse.ch)",
-
   "builtin.malwarebazaarLookup.name": "MalwareBazaar Hash-Abfrage",
   "builtin.malwarebazaarLookup.description": "Datei-Hash bei MalwareBazaar (abuse.ch) abfragen — bekannte Malware-Samples, Signaturen, Tags und Anbieter-Intelligence.",
   "builtin.malwarebazaarLookup.config.apiKey.label": "Auth-Schlüssel",
   "builtin.malwarebazaarLookup.config.apiKey.description": "Ihr abuse.ch-Auth-Schlüssel (kostenlos unter auth.abuse.ch)",
-
   "builtin.greynoiseCommunity.name": "GreyNoise Community",
   "builtin.greynoiseCommunity.description": "IP mit GreyNoise als gutartig, bösartig oder unbekannt klassifizieren. Identifiziert bekannte Scanner, Bots und vertrauenswürdige Dienste.",
   "builtin.greynoiseCommunity.config.apiKey.label": "API-Schlüssel",
   "builtin.greynoiseCommunity.config.apiKey.description": "Ihr GreyNoise Community-API-Schlüssel (kostenlos unter greynoise.io)",
-
   "panel.integrations": "Integrationen",
   "panel.description": "Verbindung zu Threat-Intelligence-Feeds, Anreicherungs-APIs und Export-Pipelines herstellen.",
   "panel.loadingIntegrations": "Integrationen werden geladen...",
@@ -74,7 +62,6 @@
   "panel.noConfigOptions": "Diese Integration hat keine konfigurierbaren Optionen.",
   "panel.availableIntegrations": "Verfügbare Integrationen",
   "panel.createCustom": "Benutzerdefiniert erstellen",
-
   "catalog.searchIntegrations": "Integrationen suchen...",
   "catalog.noTemplatesMatch": "Keine Vorlagen entsprechen Ihrer Suche.",
   "catalog.teamTemplates": "Team-Vorlagen",
@@ -96,7 +83,6 @@
   "catalog.install": "Installieren",
   "catalog.update": "Aktualisieren",
   "catalog.removeFromTeam": "Vom Team entfernen",
-
   "builder.backToCatalog": "Zurück zum Katalog",
   "builder.createIntegration": "Integration erstellen",
   "builder.previewJson": "JSON-Vorschau",
@@ -149,19 +135,28 @@
   "builder.select": "Auswählen...",
   "builder.req": "Pflicht",
   "builder.secret": "Geheim",
-
   "run.runIntegration": "Integration ausführen",
   "run.noIntegrationsForType": "Keine Integrationen für diesen IOC-Typ.",
   "run.setupIntegrations": "Integrationen einrichten →",
   "run.noIntegrationsTitle": "Keine Integrationen installiert — in Einstellungen > Integrationen einrichten",
-
   "history.noRunsYet": "Noch keine Integrationsläufe.",
   "history.unknownIntegration": "Unbekannte Integration",
   "history.apiCalls": "{{count}} API-Aufruf{{suffix}}",
   "history.created": "{{count}} erstellt",
   "history.updated": "{{count}} aktualisiert",
   "history.noStepLog": "Kein Schrittprotokoll aufgezeichnet.",
-
   "config.show": "Anzeigen",
-  "config.hide": "Ausblenden"
+  "config.hide": "Ausblenden",
+  "builtin.cwDeviceLookup.name": "ConnectWise-Gerätesuche",
+  "builtin.cwDeviceLookup.description": "Durchsuchen Sie die Konfigurationsliste von ConnectWise Manage nach einem in einem Ereignis beobachteten Hostnamen oder einer IP und melden Sie, was die CMDB darüber weiß.",
+  "builtin.cwDeviceLookup.config.site.label": "Site",
+  "builtin.cwDeviceLookup.config.site.description": "Ihr ConnectWise-Host, z. B. api-eu.myconnectwise.net",
+  "builtin.cwDeviceLookup.config.companyId.label": "Unternehmens-ID",
+  "builtin.cwDeviceLookup.config.companyId.description": "Die Kennung, mit der Sie sich anmelden, nicht der Anzeigename",
+  "builtin.cwDeviceLookup.config.publicKey.label": "Öffentlicher Schlüssel",
+  "builtin.cwDeviceLookup.config.publicKey.description": "Öffentlicher Schlüssel des API-Mitglieds",
+  "builtin.cwDeviceLookup.config.privateKey.label": "Privater Schlüssel",
+  "builtin.cwDeviceLookup.config.privateKey.description": "Privater Schlüssel des API-Mitglieds",
+  "builtin.cwDeviceLookup.config.clientId.label": "Client-ID",
+  "builtin.cwDeviceLookup.config.clientId.description": "Entwickler-Client-ID von developer.connectwise.com"
 }

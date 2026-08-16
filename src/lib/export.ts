@@ -3,7 +3,7 @@ import type { Note, Task, Folder, Tag, TimelineEvent, Timeline, Whiteboard, Stan
 import { TIMELINE_EVENT_TYPE_LABELS, CONFIDENCE_LEVELS, IOC_TYPE_LABELS } from '../types';
 import { nanoid } from 'nanoid';
 import { isOverridableField } from './asset-overrides';
-import { CASE_UPDATE_TYPES, INCIDENT_PHASES } from '../types';
+import { CASE_UPDATE_TYPES, INCIDENT_PHASES, INCIDENT_SEVERITIES } from '../types';
 
 export async function exportJSON(): Promise<string> {
   // Load tables sequentially to reduce peak memory usage (avoids loading
@@ -284,6 +284,21 @@ export function sanitizeFolder(raw: unknown): Folder | null {
       : undefined,
     closedReason: r.closedReason != null ? str(r.closedReason) : undefined,
     closedAt: r.closedAt != null ? num(r.closedAt) : undefined,
+    // Incident fields. Without these an export/import round trip silently
+    // drops the severity and the whole incident clock, which is exactly the
+    // data a post-incident report is written from.
+    severity: (INCIDENT_SEVERITIES as readonly string[]).includes(str(r.severity))
+      ? str(r.severity) as Folder['severity']
+      : undefined,
+    irPhase: (INCIDENT_PHASES as readonly string[]).includes(str(r.irPhase))
+      ? str(r.irPhase) as Folder['irPhase']
+      : undefined,
+    detectedAt: r.detectedAt != null ? num(r.detectedAt) : undefined,
+    containedAt: r.containedAt != null ? num(r.containedAt) : undefined,
+    eradicatedAt: r.eradicatedAt != null ? num(r.eradicatedAt) : undefined,
+    recoveredAt: r.recoveredAt != null ? num(r.recoveredAt) : undefined,
+    incidentCommander: r.incidentCommander != null ? str(r.incidentCommander) : undefined,
+    externalRefs: sanitizeStringMap(r.externalRefs),
   };
 }
 
@@ -491,6 +506,21 @@ export function sanitizeEvidenceItem(raw: unknown): EvidenceItem | null {
 }
 
 /** Drop unknown fields and malformed entries from an imported overrides map. */
+/**
+ * Coerce a `{ system: id }` map, dropping anything that is not a string pair.
+ * Shared by asset `externalIds` and investigation `externalRefs`.
+ */
+function sanitizeStringMap(raw: unknown): Record<string, string> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!key || value == null) continue;
+    const v = str(value);
+    if (v) out[key] = v;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 function sanitizeAssetOverrides(raw: unknown): Asset['overrides'] {
   if (!raw || typeof raw !== 'object') return undefined;
   const out: NonNullable<Asset['overrides']> = {};
@@ -553,6 +583,7 @@ export function sanitizeAsset(raw: unknown): Asset | null {
   return {
     id: str(r.id),
     externalId: optStr(r.externalId),
+    externalIds: sanitizeStringMap(r.externalIds),
     name: str(r.name, 'Untitled Asset'),
     hostname: optStr(r.hostname),
     status: optStr(r.status),

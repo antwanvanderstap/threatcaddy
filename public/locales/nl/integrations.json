@@ -146,5 +146,17 @@
   "history.updated": "{{count}} bijgewerkt",
   "history.noStepLog": "Stappenlogboek niet opgeslagen.",
   "config.show": "Weergeven",
-  "config.hide": "Verbergen"
+  "config.hide": "Verbergen",
+  "builtin.cwDeviceLookup.name": "ConnectWise-apparaatzoekopdracht",
+  "builtin.cwDeviceLookup.description": "Zoek in de configuratielijst van ConnectWise Manage naar een hostnaam of IP uit een gebeurtenis en rapporteer wat de CMDB erover weet.",
+  "builtin.cwDeviceLookup.config.site.label": "Site",
+  "builtin.cwDeviceLookup.config.site.description": "Je ConnectWise-host, bijv. api-eu.myconnectwise.net",
+  "builtin.cwDeviceLookup.config.companyId.label": "Bedrijfs-ID",
+  "builtin.cwDeviceLookup.config.companyId.description": "De identifier waarmee je inlogt, niet de weergavenaam",
+  "builtin.cwDeviceLookup.config.publicKey.label": "Publieke sleutel",
+  "builtin.cwDeviceLookup.config.publicKey.description": "Publieke sleutel van het API-lid",
+  "builtin.cwDeviceLookup.config.privateKey.label": "Privésleutel",
+  "builtin.cwDeviceLookup.config.privateKey.description": "Privésleutel van het API-lid",
+  "builtin.cwDeviceLookup.config.clientId.label": "Client-ID",
+  "builtin.cwDeviceLookup.config.clientId.description": "Developer client-ID van developer.connectwise.com"
 }

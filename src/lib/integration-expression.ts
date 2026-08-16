@@ -31,6 +31,99 @@ function valueToString(val: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
+// Filters
+// ---------------------------------------------------------------------------
+
+/**
+ * UTF-8 safe base64. `btoa` throws on any code point above U+00FF, which a
+ * company name or password can easily contain, so encode to bytes first.
+ */
+function utf8ToBase64(input: string): string {
+  const bytes = new TextEncoder().encode(input);
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+/**
+ * Value transforms usable as `{{path | filter}}` in any template string.
+ *
+ * Deliberately a fixed table rather than anything evaluated — the whole point
+ * of this module is that no expression ever reaches `eval` or `new Function`.
+ */
+const FILTERS: Record<string, (value: string) => string> = {
+  base64: utf8ToBase64,
+  base64url: (v) => utf8ToBase64(v).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+  urlencode: encodeURIComponent,
+  upper: (v) => v.toUpperCase(),
+  lower: (v) => v.toLowerCase(),
+  trim: (v) => v.trim(),
+};
+
+export const AVAILABLE_FILTERS = Object.keys(FILTERS);
+
+/**
+ * Every single-filter encoding of a secret.
+ *
+ * Log redaction matches on literal strings, so a secret that reaches the log
+ * already encoded — `{{config.privateKey | base64}}` — would sail past a
+ * redactor that only knows the raw value. Callers redact these variants too.
+ */
+export function secretVariants(secret: string): string[] {
+  const variants = new Set<string>();
+  for (const fn of Object.values(FILTERS)) {
+    try {
+      const encoded = fn(secret);
+      if (encoded && encoded !== secret) variants.add(encoded);
+    } catch {
+      // A filter that cannot encode this value simply contributes no variant.
+    }
+  }
+  return [...variants];
+}
+
+/** Thrown when a template names a filter that does not exist. */
+export class UnknownFilterError extends Error {
+  readonly filter: string;
+
+  constructor(filter: string) {
+    super(`Unknown filter "${filter}". Available: ${AVAILABLE_FILTERS.join(', ')}`);
+    this.name = 'UnknownFilterError';
+    this.filter = filter;
+  }
+}
+
+/**
+ * Split `path | filter | filter` into its parts.
+ *
+ * A token with no pipe is a bare path, which is the overwhelmingly common case
+ * and must stay byte-identical to the pre-filter behaviour.
+ */
+function parseToken(token: string): { path: string; filters: string[] } {
+  if (!token.includes('|')) return { path: token, filters: [] };
+  const [path, ...filters] = token.split('|');
+  return { path, filters: filters.map((f) => f.trim()).filter(Boolean) };
+}
+
+/**
+ * Apply a filter chain left to right.
+ *
+ * An unrecognised filter throws rather than passing the value through
+ * untouched. Silently ignoring a typo would mean `{{config.secret | base64}}`
+ * mis-spelled sends the raw secret in cleartext — a failure that looks like
+ * success until you read a packet capture.
+ */
+function applyFilters(value: string, filters: string[]): string {
+  let result = value;
+  for (const name of filters) {
+    const fn = FILTERS[name];
+    if (!fn) throw new UnknownFilterError(name);
+    result = fn(result);
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // 1. resolveVariables
 // ---------------------------------------------------------------------------
 
@@ -38,14 +131,19 @@ function valueToString(val: unknown): string {
  * Replace `{{path.to.value}}` tokens in a template string with values from
  * `context`. Objects / arrays are JSON-stringified; unresolvable paths become
  * empty strings.
+ *
+ * A token may pipe the resolved value through filters — `{{config.key | base64}}`
+ * — which is how templates build credentials they cannot express as a plain
+ * path. See `AVAILABLE_FILTERS`.
  */
 export function resolveVariables(
   template: string,
   context: Record<string, unknown>,
 ): string {
-  return template.replace(TEMPLATE_RE, (_, path: string) => {
+  return template.replace(TEMPLATE_RE, (_, token: string) => {
+    const { path, filters } = parseToken(token);
     const val = walkPath(context, path);
-    return valueToString(val);
+    return applyFilters(valueToString(val), filters);
   });
 }
 

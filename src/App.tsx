@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useEffect, useRef, lazy, Suspense, memo, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, useEffect, useRef, lazy, Suspense, memo, type ReactNode } from 'react';
 import { AppLayout } from './components/Layout/AppLayout';
 import { Header } from './components/Layout/Header';
 import { Sidebar } from './components/Layout/Sidebar';
@@ -21,6 +21,8 @@ import { useWhiteboards } from './hooks/useWhiteboards';
 import { useStandaloneIOCs } from './hooks/useStandaloneIOCs';
 import { useEvidenceItems } from './hooks/useEvidenceItems';
 import { useAssets } from './hooks/useAssets';
+import { useConnectWise } from './hooks/useConnectWise';
+import type { TicketIntakePlan } from './lib/connectwise-tickets';
 import { useCaseUpdates } from './hooks/useCaseUpdates';
 import { useChats } from './hooks/useChats';
 import { useFolders } from './hooks/useFolders';
@@ -31,6 +33,7 @@ import { useNoteTemplates } from './hooks/useNoteTemplates';
 import { usePlaybooks } from './hooks/usePlaybooks';
 import { useIntegrations } from './hooks/useIntegrations';
 const PlaybookPicker = lazy(() => import('./components/Playbooks/PlaybookPicker').then(m => ({ default: m.PlaybookPicker })));
+const ConnectWiseTicketReview = lazy(() => import('./components/Integrations/ConnectWiseTicketReview').then(m => ({ default: m.ConnectWiseTicketReview })));
 const OperationNameGenerator = lazy(() => import('./components/Common/OperationNameGenerator').then(m => ({ default: m.OperationNameGenerator })));
 const EvidenceView = lazy(() => import('./components/Evidence/EvidenceView').then(m => ({ default: m.EvidenceView })));
 const AssetView = lazy(() => import('./components/Assets/AssetView').then(m => ({ default: m.AssetView })));
@@ -419,6 +422,63 @@ const AppInner = memo(function AppInner({
   const inv = useInvestigation();
   const ui = useUIModals();
   const { t: tExec } = useTranslation('exec');
+  const { t: tSettings } = useTranslation('settings');
+
+  // ─── ConnectWise Manage ───────────────────────────────────────────
+  const connectWise = useConnectWise(settings, updateSettings);
+  const [cwTicketOpen, setCwTicketOpen] = useState(false);
+  const [cwTicketPlan, setCwTicketPlan] = useState<TicketIntakePlan | null>(null);
+  const [cwTicketLoading, setCwTicketLoading] = useState(false);
+  const [cwTicketError, setCwTicketError] = useState<string | undefined>(undefined);
+
+  /** Pull the CW configuration list into the asset inventory. */
+  const handleSyncConnectWiseAssets = useCallback(async () => {
+    if (!connectWise.credentials) return;
+    try {
+      const result = await assetsHook.syncConnectWiseAssets(connectWise.credentials, {
+        conditions: connectWise.config?.configurationConditions,
+        msspIdentifiers: connectWise.config?.msspIdentifiers,
+      });
+      await connectWise.patchConfig({ lastConfigurationSyncAt: Date.now(), lastError: undefined });
+      addToast('success', tSettings('connectwise.syncDone', {
+        created: result.created,
+        updated: result.updated,
+      }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await connectWise.patchConfig({ lastError: msg });
+      addToast('error', msg);
+    }
+  }, [connectWise, assetsHook, addToast, tSettings]);
+
+  /**
+   * Fetch tickets and show the plan. Nothing is written here — the review
+   * modal is what commits, so a mis-scoped board condition is visible before
+   * it turns into a pile of investigations.
+   */
+  const handlePullConnectWiseTickets = useCallback(async () => {
+    setCwTicketOpen(true);
+    setCwTicketLoading(true);
+    setCwTicketError(undefined);
+    setCwTicketPlan(null);
+    try {
+      setCwTicketPlan(await connectWise.planTickets(folders));
+    } catch (err) {
+      setCwTicketError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCwTicketLoading(false);
+    }
+  }, [connectWise, folders]);
+
+  const handleApplyConnectWiseTickets = useCallback(async (accepted: Set<string>) => {
+    if (!cwTicketPlan) return;
+    const summary = await connectWise.applyTicketPlan(cwTicketPlan, accepted);
+    await reloadFolders();
+    addToast('success', tSettings('connectwise.ticketsApplied', {
+      created: summary.created,
+      updated: summary.updated,
+    }));
+  }, [cwTicketPlan, connectWise, reloadFolders, addToast, tSettings]);
 
   // Destructure frequently-used context values
   const {
@@ -1676,6 +1736,10 @@ const AppInner = memo(function AppInner({
               onUpdatePlaybook: playbooksHook.updatePlaybook,
               onDeletePlaybook: playbooksHook.deletePlaybook,
             }}
+            connectWiseProps={{
+              onSyncConfigurations: handleSyncConnectWiseAssets,
+              onPullTickets: handlePullConnectWiseTickets,
+            }}
           />
           </ErrorBoundary>
         ) : showTrash || showArchive ? (
@@ -2153,6 +2217,15 @@ const AppInner = memo(function AppInner({
           templates={noteTemplatesHook.templates}
         />
       </Suspense>
+
+      <Suspense fallback={null}><ConnectWiseTicketReview
+        open={cwTicketOpen}
+        onClose={() => setCwTicketOpen(false)}
+        plan={cwTicketPlan}
+        loading={cwTicketLoading}
+        error={cwTicketError}
+        onApply={handleApplyConnectWiseTickets}
+      /></Suspense>
 
       <Suspense fallback={null}><PlaybookPicker
         open={showPlaybookPicker}

@@ -8,6 +8,7 @@ import type { Settings, Note, NoteTemplate, PlaybookTemplate, PlaybookStep, Cust
 import { useCustomSlashCommands } from '../../hooks/useCustomSlashCommands';
 import { TemplateManager } from './TemplateManager';
 import { PlaybookManager } from './PlaybookManager';
+import { ConnectWiseConfig } from './ConnectWiseConfig';
 import { DEFAULT_SYSTEM_PROMPT } from '../../lib/llm-tools';
 import { MODELS, MODEL_PROVIDER_MAP } from '../../lib/models';
 import { ExportImport } from './ExportImport';
@@ -98,6 +99,10 @@ interface SettingsPanelProps {
     onCreatePlaybook: (data: Partial<PlaybookTemplate> & { name: string; steps: PlaybookStep[] }) => Promise<PlaybookTemplate>;
     onUpdatePlaybook: (id: string, updates: Partial<PlaybookTemplate>) => Promise<void>;
     onDeletePlaybook: (id: string) => Promise<void>;
+  };
+  connectWiseProps?: {
+    onSyncConfigurations?: () => Promise<void>;
+    onPullTickets?: () => Promise<void>;
   };
 }
 
@@ -221,7 +226,7 @@ function CustomSlashCommandsEditor() {
 
 const TAB_KEYS: SettingsTab[] = ['general', 'appearance', 'ai', 'agents', 'data', 'templates', 'intel', 'integrations', 'shortcuts'];
 
-export function SettingsPanel({ settings, onUpdateSettings, notes, onImportComplete, sampleLoaded, onLoadSample, onDeleteSample, onClose, initialTab, templateProps, playbookProps }: SettingsPanelProps) {
+export function SettingsPanel({ settings, onUpdateSettings, notes, onImportComplete, sampleLoaded, onLoadSample, onDeleteSample, onClose, initialTab, templateProps, playbookProps, connectWiseProps }: SettingsPanelProps) {
   const { t } = useTranslation('settings');
   const { addToast } = useToast();
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab || 'general');
@@ -748,6 +753,12 @@ export function SettingsPanel({ settings, onUpdateSettings, notes, onImportCompl
       {/* Integrations Tab */}
       {activeTab === 'integrations' && (
         <div className="space-y-6" role="tabpanel" id="settings-panel-integrations" aria-labelledby="settings-tab-integrations">
+          <ConnectWiseConfig
+            settings={settings}
+            onUpdateSettings={onUpdateSettings}
+            onSyncConfigurations={connectWiseProps?.onSyncConfigurations}
+            onPullTickets={connectWiseProps?.onPullTickets}
+          />
           <IntegrationPanel />
         </div>
       )}

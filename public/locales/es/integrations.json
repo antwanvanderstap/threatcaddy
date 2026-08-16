@@ -3,64 +3,52 @@
   "builtin.vtIpLookup.description": "Buscar una dirección IP en VirusTotal para obtener reputación, geolocalización y estadísticas de análisis.",
   "builtin.vtIpLookup.config.apiKey.label": "Clave API",
   "builtin.vtIpLookup.config.apiKey.description": "Su clave API de VirusTotal",
-
   "builtin.abuseipdbCheck.name": "Verificación AbuseIPDB",
   "builtin.abuseipdbCheck.description": "Verificar una dirección IP en la base de datos AbuseIPDB para informes de abuso y puntuación de confianza.",
   "builtin.abuseipdbCheck.config.apiKey.label": "Clave API",
   "builtin.abuseipdbCheck.config.apiKey.description": "Su clave API de AbuseIPDB",
   "builtin.abuseipdbCheck.config.maxAgeInDays.label": "Edad máx. (días)",
   "builtin.abuseipdbCheck.config.maxAgeInDays.description": "Antigüedad máxima de los informes a incluir",
-
   "builtin.shodanHostInfo.name": "Información de host Shodan",
   "builtin.shodanHostInfo.description": "Recuperar información del host de Shodan, incluyendo puertos abiertos, vulnerabilidades y detalles de la organización.",
   "builtin.shodanHostInfo.config.apiKey.label": "Clave API",
   "builtin.shodanHostInfo.config.apiKey.description": "Su clave API de Shodan",
-
   "builtin.slackWebhookNotify.name": "Notificación Slack Webhook",
   "builtin.slackWebhookNotify.description": "Enviar alertas de IOC a un canal de Slack mediante un webhook entrante con formato Block Kit enriquecido.",
   "builtin.slackWebhookNotify.config.webhookUrl.label": "URL del webhook",
   "builtin.slackWebhookNotify.config.webhookUrl.description": "URL del webhook entrante de Slack",
   "builtin.slackWebhookNotify.config.channel.label": "Anulación de canal",
   "builtin.slackWebhookNotify.config.channel.description": "Canal opcional donde publicar (anula el canal predeterminado del webhook)",
-
   "builtin.urlhausLookup.name": "Búsqueda de URL en URLhaus",
   "builtin.urlhausLookup.description": "Buscar una URL en URLhaus (abuse.ch) para actividades conocidas de distribución de malware. Requiere una clave API gratuita de auth.abuse.ch.",
   "builtin.urlhausLookup.config.apiKey.label": "Clave de autenticación",
   "builtin.urlhausLookup.config.apiKey.description": "Su clave de autenticación abuse.ch (gratuita en auth.abuse.ch)",
-
   "builtin.urlhausDomainLookup.name": "Búsqueda de dominio en URLhaus",
   "builtin.urlhausDomainLookup.description": "Buscar un dominio en URLhaus (abuse.ch) para URLs conocidas de distribución de malware. Requiere una clave API gratuita de auth.abuse.ch.",
   "builtin.urlhausDomainLookup.config.apiKey.label": "Clave de autenticación",
   "builtin.urlhausDomainLookup.config.apiKey.description": "Su clave de autenticación abuse.ch (gratuita en auth.abuse.ch)",
-
   "builtin.shodanInternetdb.name": "Shodan InternetDB",
   "builtin.shodanInternetdb.description": "Enriquecimiento de IP gratuito de Shodan — puertos abiertos, CVEs, nombres de host y etiquetas. No se requiere clave API.",
-
   "builtin.vtDomainLookup.name": "Búsqueda de dominio en VirusTotal",
   "builtin.vtDomainLookup.description": "Buscar un dominio en VirusTotal para reputación, registros DNS y estadísticas de análisis.",
   "builtin.vtDomainLookup.config.apiKey.label": "Clave API",
   "builtin.vtDomainLookup.config.apiKey.description": "Su clave API de VirusTotal",
-
   "builtin.vtHashLookup.name": "Búsqueda de hash en VirusTotal",
   "builtin.vtHashLookup.description": "Buscar un hash de archivo (MD5/SHA1/SHA256) en VirusTotal para resultados de detección de malware.",
   "builtin.vtHashLookup.config.apiKey.label": "Clave API",
   "builtin.vtHashLookup.config.apiKey.description": "Su clave API de VirusTotal",
-
   "builtin.threatfoxLookup.name": "Búsqueda de IOC en ThreatFox",
   "builtin.threatfoxLookup.description": "Buscar en ThreatFox (abuse.ch) IOCs asociados a malware conocido — servidores C2, URLs de distribución, hashes de payload.",
   "builtin.threatfoxLookup.config.apiKey.label": "Clave de autenticación",
   "builtin.threatfoxLookup.config.apiKey.description": "Su clave de autenticación abuse.ch (gratuita en auth.abuse.ch)",
-
   "builtin.malwarebazaarLookup.name": "Búsqueda de hash en MalwareBazaar",
   "builtin.malwarebazaarLookup.description": "Buscar un hash de archivo en MalwareBazaar (abuse.ch) — muestras de malware conocidas, firmas, etiquetas e inteligencia de proveedores.",
   "builtin.malwarebazaarLookup.config.apiKey.label": "Clave de autenticación",
   "builtin.malwarebazaarLookup.config.apiKey.description": "Su clave de autenticación abuse.ch (gratuita en auth.abuse.ch)",
-
   "builtin.greynoiseCommunity.name": "GreyNoise Community",
   "builtin.greynoiseCommunity.description": "Clasificar una IP como benigna, maliciosa o desconocida usando GreyNoise. Identifica escáneres, bots y servicios de confianza conocidos.",
   "builtin.greynoiseCommunity.config.apiKey.label": "Clave API",
   "builtin.greynoiseCommunity.config.apiKey.description": "Su clave API de GreyNoise Community (gratuita en greynoise.io)",
-
   "panel.integrations": "Integraciones",
   "panel.description": "Conecte con feeds de inteligencia de amenazas, APIs de enriquecimiento y canales de exportación.",
   "panel.loadingIntegrations": "Cargando integraciones...",
@@ -74,7 +62,6 @@
   "panel.noConfigOptions": "Esta integración no tiene opciones configurables.",
   "panel.availableIntegrations": "Integraciones disponibles",
   "panel.createCustom": "Crear personalizada",
-
   "catalog.searchIntegrations": "Buscar integraciones...",
   "catalog.noTemplatesMatch": "Ninguna plantilla coincide con su búsqueda.",
   "catalog.teamTemplates": "Plantillas de equipo",
@@ -96,7 +83,6 @@
   "catalog.install": "Instalar",
   "catalog.update": "Actualizar",
   "catalog.removeFromTeam": "Eliminar del equipo",
-
   "builder.backToCatalog": "Volver al catálogo",
   "builder.createIntegration": "Crear integración",
   "builder.previewJson": "Vista previa JSON",
@@ -149,19 +135,28 @@
   "builder.select": "Seleccionar...",
   "builder.req": "Req",
   "builder.secret": "Secreto",
-
   "run.runIntegration": "Ejecutar integración",
   "run.noIntegrationsForType": "No hay integraciones para este tipo de IOC.",
   "run.setupIntegrations": "Configurar integraciones →",
   "run.noIntegrationsTitle": "No hay integraciones instaladas — configurar en Configuración > Integraciones",
-
   "history.noRunsYet": "Aún no hay ejecuciones de integración.",
   "history.unknownIntegration": "Integración desconocida",
   "history.apiCalls": "{{count}} llamada(s) API{{suffix}}",
   "history.created": "{{count}} creado(s)",
   "history.updated": "{{count}} actualizado(s)",
   "history.noStepLog": "No se registró ningún registro de pasos.",
-
   "config.show": "Mostrar",
-  "config.hide": "Ocultar"
+  "config.hide": "Ocultar",
+  "builtin.cwDeviceLookup.name": "Búsqueda de dispositivos en ConnectWise",
+  "builtin.cwDeviceLookup.description": "Busca en la lista de configuraciones de ConnectWise Manage un nombre de host o una IP vistos en un evento e informa de lo que la CMDB sabe al respecto.",
+  "builtin.cwDeviceLookup.config.site.label": "Sitio",
+  "builtin.cwDeviceLookup.config.site.description": "Su host de ConnectWise, p. ej. api-eu.myconnectwise.net",
+  "builtin.cwDeviceLookup.config.companyId.label": "ID de empresa",
+  "builtin.cwDeviceLookup.config.companyId.description": "El identificador con el que inicia sesión, no el nombre visible",
+  "builtin.cwDeviceLookup.config.publicKey.label": "Clave pública",
+  "builtin.cwDeviceLookup.config.publicKey.description": "Clave pública del miembro API",
+  "builtin.cwDeviceLookup.config.privateKey.label": "Clave privada",
+  "builtin.cwDeviceLookup.config.privateKey.description": "Clave privada del miembro API",
+  "builtin.cwDeviceLookup.config.clientId.label": "ID de cliente",
+  "builtin.cwDeviceLookup.config.clientId.description": "ID de cliente de desarrollador de developer.connectwise.com"
 }

@@ -3,64 +3,52 @@
   "builtin.vtIpLookup.description": "İtibar, coğrafi konum ve analiz istatistiklerini almak için VirusTotal'da bir IP adresi sorgulayın.",
   "builtin.vtIpLookup.config.apiKey.label": "API Anahtarı",
   "builtin.vtIpLookup.config.apiKey.description": "VirusTotal API anahtarınız",
-
   "builtin.abuseipdbCheck.name": "AbuseIPDB Kontrolü",
   "builtin.abuseipdbCheck.description": "Kötüye kullanım raporları ve güven puanlaması için bir IP adresini AbuseIPDB veritabanında kontrol edin.",
   "builtin.abuseipdbCheck.config.apiKey.label": "API Anahtarı",
   "builtin.abuseipdbCheck.config.apiKey.description": "AbuseIPDB API anahtarınız",
   "builtin.abuseipdbCheck.config.maxAgeInDays.label": "Maks. Yaş (gün)",
   "builtin.abuseipdbCheck.config.maxAgeInDays.description": "Dahil edilecek raporların maksimum yaşı",
-
   "builtin.shodanHostInfo.name": "Shodan Sunucu Bilgisi",
   "builtin.shodanHostInfo.description": "Shodan'dan açık portlar, güvenlik açıkları ve organizasyon ayrıntıları dahil sunucu bilgilerini alın.",
   "builtin.shodanHostInfo.config.apiKey.label": "API Anahtarı",
   "builtin.shodanHostInfo.config.apiKey.description": "Shodan API anahtarınız",
-
   "builtin.slackWebhookNotify.name": "Slack Webhook Bildirimi",
   "builtin.slackWebhookNotify.description": "Zengin Block Kit biçimlendirmesiyle gelen webhook aracılığıyla bir Slack kanalına IOC uyarıları gönderin.",
   "builtin.slackWebhookNotify.config.webhookUrl.label": "Webhook URL'si",
   "builtin.slackWebhookNotify.config.webhookUrl.description": "Slack gelen webhook URL'si",
   "builtin.slackWebhookNotify.config.channel.label": "Kanal Geçersiz Kılma",
   "builtin.slackWebhookNotify.config.channel.description": "Gönderi yapılacak isteğe bağlı kanal (webhook varsayılanını geçersiz kılar)",
-
   "builtin.urlhausLookup.name": "URLhaus URL Sorgusu",
   "builtin.urlhausLookup.description": "Bilinen zararlı yazılım dağıtım etkinliği için URLhaus (abuse.ch) üzerinde bir URL sorgulayın. auth.abuse.ch'den ücretsiz API anahtarı gerektirir.",
   "builtin.urlhausLookup.config.apiKey.label": "Auth Anahtarı",
   "builtin.urlhausLookup.config.apiKey.description": "abuse.ch Auth Anahtarınız (auth.abuse.ch'de ücretsiz)",
-
   "builtin.urlhausDomainLookup.name": "URLhaus Alan Sorgusu",
   "builtin.urlhausDomainLookup.description": "Bilinen zararlı yazılım dağıtım URL'leri için URLhaus (abuse.ch) üzerinde bir alan adı sorgulayın. auth.abuse.ch'den ücretsiz API anahtarı gerektirir.",
   "builtin.urlhausDomainLookup.config.apiKey.label": "Auth Anahtarı",
   "builtin.urlhausDomainLookup.config.apiKey.description": "abuse.ch Auth Anahtarınız (auth.abuse.ch'de ücretsiz)",
-
   "builtin.shodanInternetdb.name": "Shodan InternetDB",
   "builtin.shodanInternetdb.description": "Shodan'dan ücretsiz IP zenginleştirme — açık portlar, CVE'ler, ana bilgisayar adları ve etiketler. API anahtarı gerekmez.",
-
   "builtin.vtDomainLookup.name": "VirusTotal Alan Sorgusu",
   "builtin.vtDomainLookup.description": "İtibar, DNS kayıtları ve analiz istatistikleri için VirusTotal'da bir alan adı sorgulayın.",
   "builtin.vtDomainLookup.config.apiKey.label": "API Anahtarı",
   "builtin.vtDomainLookup.config.apiKey.description": "VirusTotal API anahtarınız",
-
   "builtin.vtHashLookup.name": "VirusTotal Hash Sorgusu",
   "builtin.vtHashLookup.description": "Zararlı yazılım tespit sonuçları için VirusTotal'da bir dosya hash'i (MD5/SHA1/SHA256) sorgulayın.",
   "builtin.vtHashLookup.config.apiKey.label": "API Anahtarı",
   "builtin.vtHashLookup.config.apiKey.description": "VirusTotal API anahtarınız",
-
   "builtin.threatfoxLookup.name": "ThreatFox IOC Araması",
   "builtin.threatfoxLookup.description": "Bilinen zararlı yazılım ile ilişkili IOC'ler için ThreatFox (abuse.ch) üzerinde arama yapın — C2 sunucuları, dağıtım URL'leri, yük hash'leri.",
   "builtin.threatfoxLookup.config.apiKey.label": "Auth Anahtarı",
   "builtin.threatfoxLookup.config.apiKey.description": "abuse.ch Auth Anahtarınız (auth.abuse.ch'de ücretsiz)",
-
   "builtin.malwarebazaarLookup.name": "MalwareBazaar Hash Sorgusu",
   "builtin.malwarebazaarLookup.description": "MalwareBazaar (abuse.ch) üzerinde bir dosya hash'i sorgulayın — bilinen zararlı yazılım örnekleri, imzalar, etiketler ve satıcı istihbaratı.",
   "builtin.malwarebazaarLookup.config.apiKey.label": "Auth Anahtarı",
   "builtin.malwarebazaarLookup.config.apiKey.description": "abuse.ch Auth Anahtarınız (auth.abuse.ch'de ücretsiz)",
-
   "builtin.greynoiseCommunity.name": "GreyNoise Community",
   "builtin.greynoiseCommunity.description": "GreyNoise kullanarak bir IP'yi zararsız, kötü amaçlı veya bilinmeyen olarak sınıflandırın. Bilinen tarayıcıları, botları ve güvenilir servisleri tanımlar.",
   "builtin.greynoiseCommunity.config.apiKey.label": "API Anahtarı",
   "builtin.greynoiseCommunity.config.apiKey.description": "GreyNoise Community API anahtarınız (greynoise.io'da ücretsiz)",
-
   "panel.integrations": "Entegrasyonlar",
   "panel.description": "Tehdit istihbaratı akışlarına, zenginleştirme API'lerine ve dışa aktarma hatlarına bağlanın.",
   "panel.loadingIntegrations": "Entegrasyonlar yükleniyor...",
@@ -74,7 +62,6 @@
   "panel.noConfigOptions": "Bu entegrasyonun yapılandırılabilir seçeneği yok.",
   "panel.availableIntegrations": "Mevcut Entegrasyonlar",
   "panel.createCustom": "Özel Oluştur",
-
   "catalog.searchIntegrations": "Entegrasyonlarda ara...",
   "catalog.noTemplatesMatch": "Aramanızla eşleşen şablon yok.",
   "catalog.teamTemplates": "Ekip Şablonları",
@@ -96,7 +83,6 @@
   "catalog.install": "Yükle",
   "catalog.update": "Güncelle",
   "catalog.removeFromTeam": "Ekipten kaldır",
-
   "builder.backToCatalog": "Kataloğa Dön",
   "builder.createIntegration": "Entegrasyon Oluştur",
   "builder.previewJson": "JSON Önizle",
@@ -149,19 +135,28 @@
   "builder.select": "Seç...",
   "builder.req": "Ger.",
   "builder.secret": "Gizli",
-
   "run.runIntegration": "Entegrasyonu Çalıştır",
   "run.noIntegrationsForType": "Bu IOC türü için entegrasyon yok.",
   "run.setupIntegrations": "Entegrasyonları kur →",
   "run.noIntegrationsTitle": "Yüklenmiş entegrasyon yok — Ayarlar > Entegrasyonlar'da kur",
-
   "history.noRunsYet": "Henüz entegrasyon çalışması yok.",
   "history.unknownIntegration": "Bilinmeyen Entegrasyon",
   "history.apiCalls": "{{count}} API çağrısı{{suffix}}",
   "history.created": "{{count}} oluşturuldu",
   "history.updated": "{{count}} güncellendi",
   "history.noStepLog": "Adım günlüğü kaydedilmedi.",
-
   "config.show": "Göster",
-  "config.hide": "Gizle"
+  "config.hide": "Gizle",
+  "builtin.cwDeviceLookup.name": "ConnectWise Cihaz Araması",
+  "builtin.cwDeviceLookup.description": "Bir olayda görülen ana bilgisayar adı veya IP için ConnectWise Manage yapılandırma listesinde arama yapın ve CMDB'nin bu konuda ne bildiğini bildirin.",
+  "builtin.cwDeviceLookup.config.site.label": "Site",
+  "builtin.cwDeviceLookup.config.site.description": "ConnectWise ana bilgisayarınız, örn. api-eu.myconnectwise.net",
+  "builtin.cwDeviceLookup.config.companyId.label": "Şirket kimliği",
+  "builtin.cwDeviceLookup.config.companyId.description": "Oturum açarken kullandığınız tanımlayıcı, görünen ad değil",
+  "builtin.cwDeviceLookup.config.publicKey.label": "Genel anahtar",
+  "builtin.cwDeviceLookup.config.publicKey.description": "API üyesinin genel anahtarı",
+  "builtin.cwDeviceLookup.config.privateKey.label": "Özel anahtar",
+  "builtin.cwDeviceLookup.config.privateKey.description": "API üyesinin özel anahtarı",
+  "builtin.cwDeviceLookup.config.clientId.label": "İstemci kimliği",
+  "builtin.cwDeviceLookup.config.clientId.description": "developer.connectwise.com adresinden geliştirici istemci kimliği"
 }

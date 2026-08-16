@@ -146,5 +146,17 @@
   "history.updated": "{{count}} עודכנו",
   "history.noStepLog": "לא נרשם יומן שלבים.",
   "config.show": "הצג",
-  "config.hide": "הסתר"
+  "config.hide": "הסתר",
+  "builtin.cwDeviceLookup.name": "חיפוש התקן ב-ConnectWise",
+  "builtin.cwDeviceLookup.description": "חפש ברשימת התצורות של ConnectWise Manage שם מארח או כתובת IP שנצפו באירוע, ודווח מה ה-CMDB יודע עליהם.",
+  "builtin.cwDeviceLookup.config.site.label": "אתר",
+  "builtin.cwDeviceLookup.config.site.description": "המארח שלך ב-ConnectWise, למשל api-eu.myconnectwise.net",
+  "builtin.cwDeviceLookup.config.companyId.label": "מזהה חברה",
+  "builtin.cwDeviceLookup.config.companyId.description": "המזהה שאיתו אתה מתחבר, לא שם התצוגה",
+  "builtin.cwDeviceLookup.config.publicKey.label": "מפתח ציבורי",
+  "builtin.cwDeviceLookup.config.publicKey.description": "המפתח הציבורי של חבר ה-API",
+  "builtin.cwDeviceLookup.config.privateKey.label": "מפתח פרטי",
+  "builtin.cwDeviceLookup.config.privateKey.description": "המפתח הפרטי של חבר ה-API",
+  "builtin.cwDeviceLookup.config.clientId.label": "מזהה לקוח",
+  "builtin.cwDeviceLookup.config.clientId.description": "מזהה לקוח למפתחים מ-developer.connectwise.com"
 }

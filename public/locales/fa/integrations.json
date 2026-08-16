@@ -146,5 +146,17 @@
   "history.updated": "{{count}} به‌روزرسانی شد",
   "history.noStepLog": "گزارش مرحله‌ای ثبت نشده.",
   "config.show": "نمایش",
-  "config.hide": "پنهان"
+  "config.hide": "پنهان",
+  "builtin.cwDeviceLookup.name": "جست‌وجوی دستگاه در ConnectWise",
+  "builtin.cwDeviceLookup.description": "در فهرست پیکربندی‌های ConnectWise Manage به دنبال نام میزبان یا IP دیده‌شده در یک رویداد بگردید و گزارش دهید که CMDB چه چیزی درباره آن می‌داند.",
+  "builtin.cwDeviceLookup.config.site.label": "سایت",
+  "builtin.cwDeviceLookup.config.site.description": "میزبان ConnectWise شما، مثلاً api-eu.myconnectwise.net",
+  "builtin.cwDeviceLookup.config.companyId.label": "شناسه شرکت",
+  "builtin.cwDeviceLookup.config.companyId.description": "شناسه‌ای که با آن وارد می‌شوید، نه نام نمایشی",
+  "builtin.cwDeviceLookup.config.publicKey.label": "کلید عمومی",
+  "builtin.cwDeviceLookup.config.publicKey.description": "کلید عمومی عضو API",
+  "builtin.cwDeviceLookup.config.privateKey.label": "کلید خصوصی",
+  "builtin.cwDeviceLookup.config.privateKey.description": "کلید خصوصی عضو API",
+  "builtin.cwDeviceLookup.config.clientId.label": "شناسه کلاینت",
+  "builtin.cwDeviceLookup.config.clientId.description": "شناسه کلاینت توسعه‌دهنده از developer.connectwise.com"
 }

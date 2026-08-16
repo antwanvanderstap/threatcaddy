@@ -37,7 +37,14 @@ function migrateSettings(raw: Record<string, unknown>): Record<string, unknown> 
   return raw;
 }
 
-function loadSettings(): Settings {
+/**
+ * Read the persisted settings outside of React.
+ *
+ * Exported for the handful of non-component callers that need one field and
+ * have no path to the hook — see `useIntegrations`, which must know the
+ * configured ConnectWise host to allowlist it.
+ */
+export function loadSettings(): Settings {
   try {
     const stored = localStorage.getItem(SETTINGS_KEY);
     if (stored) {

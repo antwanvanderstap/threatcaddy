@@ -4,6 +4,20 @@ import { db } from '../db';
 import type { IntegrationTemplate, InstalledIntegration, IntegrationRun } from '../types/integration-types';
 import { BUILTIN_INTEGRATIONS } from '../lib/builtin-integrations';
 import { syncProxyAllowedDomains } from '../lib/integration-executor';
+import { loadSettings } from './useSettings';
+import { connectWiseHost } from '../lib/connectwise';
+
+/** The configured ConnectWise host, when there is a usable one. */
+function connectWiseDomains(): string[] {
+  const site = loadSettings().connectWise?.site;
+  if (!site?.trim()) return [];
+  try {
+    return [connectWiseHost(site)];
+  } catch {
+    // A half-typed site is not an error worth surfacing here.
+    return [];
+  }
+}
 
 export function useIntegrations() {
   const [templates, setTemplates] = useState<IntegrationTemplate[]>([]);
@@ -25,8 +39,10 @@ export function useIntegrations() {
     const allTemplates = Array.from(templateMap.values());
     setTemplates(allTemplates);
 
-    // Sync allowed proxy domains to extension for defense-in-depth
-    syncProxyAllowedDomains(allTemplates);
+    // Sync allowed proxy domains to extension for defense-in-depth.
+    // The ConnectWise host is per-tenant so no template can declare it; without
+    // this the background script refuses a connection the user configured.
+    syncProxyAllowedDomains(allTemplates, connectWiseDomains());
 
     setInstallations(dbInstallations);
     setRuns(dbRuns);

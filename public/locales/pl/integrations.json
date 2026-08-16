@@ -146,5 +146,17 @@
   "history.updated": "{{count}} zaktualizowano",
   "history.noStepLog": "Dziennik kroków nie zapisany.",
   "config.show": "Pokaż",
-  "config.hide": "Ukryj"
+  "config.hide": "Ukryj",
+  "builtin.cwDeviceLookup.name": "Wyszukiwanie urządzeń w ConnectWise",
+  "builtin.cwDeviceLookup.description": "Przeszukaj listę konfiguracji ConnectWise Manage pod kątem nazwy hosta lub adresu IP zauważonego w zdarzeniu i zgłoś, co wie o nim CMDB.",
+  "builtin.cwDeviceLookup.config.site.label": "Witryna",
+  "builtin.cwDeviceLookup.config.site.description": "Twój host ConnectWise, np. api-eu.myconnectwise.net",
+  "builtin.cwDeviceLookup.config.companyId.label": "ID firmy",
+  "builtin.cwDeviceLookup.config.companyId.description": "Identyfikator, którym się logujesz, a nie wyświetlana nazwa",
+  "builtin.cwDeviceLookup.config.publicKey.label": "Klucz publiczny",
+  "builtin.cwDeviceLookup.config.publicKey.description": "Klucz publiczny członka API",
+  "builtin.cwDeviceLookup.config.privateKey.label": "Klucz prywatny",
+  "builtin.cwDeviceLookup.config.privateKey.description": "Klucz prywatny członka API",
+  "builtin.cwDeviceLookup.config.clientId.label": "ID klienta",
+  "builtin.cwDeviceLookup.config.clientId.description": "Deweloperski identyfikator klienta z developer.connectwise.com"
 }

@@ -146,5 +146,17 @@
   "history.updated": "{{count}} оновлено",
   "history.noStepLog": "Журнал кроків не записано.",
   "config.show": "Показати",
-  "config.hide": "Сховати"
+  "config.hide": "Сховати",
+  "builtin.cwDeviceLookup.name": "Пошук пристрою в ConnectWise",
+  "builtin.cwDeviceLookup.description": "Знайдіть у списку конфігурацій ConnectWise Manage ім'я хоста або IP-адресу, помічену в події, і покажіть, що про неї знає CMDB.",
+  "builtin.cwDeviceLookup.config.site.label": "Сайт",
+  "builtin.cwDeviceLookup.config.site.description": "Ваш хост ConnectWise, наприклад api-eu.myconnectwise.net",
+  "builtin.cwDeviceLookup.config.companyId.label": "ID компанії",
+  "builtin.cwDeviceLookup.config.companyId.description": "Ідентифікатор, з яким ви входите в систему, а не відображувана назва",
+  "builtin.cwDeviceLookup.config.publicKey.label": "Відкритий ключ",
+  "builtin.cwDeviceLookup.config.publicKey.description": "Відкритий ключ учасника API",
+  "builtin.cwDeviceLookup.config.privateKey.label": "Закритий ключ",
+  "builtin.cwDeviceLookup.config.privateKey.description": "Закритий ключ учасника API",
+  "builtin.cwDeviceLookup.config.clientId.label": "ID клієнта",
+  "builtin.cwDeviceLookup.config.clientId.description": "ID клієнта розробника з developer.connectwise.com"
 }

@@ -123,6 +123,161 @@ export function assetIdentityKey(asset: Pick<Asset, 'externalId' | 'serialNumber
   return `name:${asset.name.trim().toLowerCase()}|${asset.primaryIp ?? ''}`;
 }
 
+type MatchableAsset = Pick<
+  Asset,
+  'externalId' | 'externalIds' | 'serialNumber' | 'macAddress' | 'name' | 'primaryIp'
+>;
+
+/**
+ * Every key an asset can be recognised by, most trustworthy first.
+ *
+ * A single key is not enough once a second source system is involved: the same
+ * server is configuration 4821 in ITGlue and 1173 in ConnectWise, so an
+ * id-only match would import it twice. Falling back to serial, then MAC, lets
+ * a ConnectWise sync land on the record the CSV import already created.
+ *
+ * Source-scoped ids (`ext:connectwise:1173`) never collide across systems. The
+ * bare `ext:` key is retained for records imported before ids were scoped.
+ */
+export function assetMatchKeys(asset: MatchableAsset): string[] {
+  const keys: string[] = [];
+
+  for (const [source, id] of Object.entries(asset.externalIds ?? {})) {
+    if (id) keys.push(`ext:${source}:${id}`);
+  }
+  if (asset.externalId) keys.push(`ext:${asset.externalId}`);
+
+  const serial = asset.serialNumber?.trim().toLowerCase();
+  // VMware BIOS UUIDs repeat across guests on a host, so they identify the
+  // hypervisor rather than the VM and would merge unrelated machines.
+  if (serial && !serial.startsWith('vmware')) keys.push(`sn:${serial}`);
+
+  const mac = asset.macAddress ? normalizeMac(asset.macAddress) : undefined;
+  if (mac) keys.push(`mac:${mac}`);
+
+  keys.push(`name:${asset.name.trim().toLowerCase()}|${asset.primaryIp ?? ''}`);
+  return keys;
+}
+
+export interface MergeAssetsOptions {
+  now: number;
+  includeNonTechnical?: boolean;
+  /** Declared owner for this batch, when the source cannot supply one. */
+  owner?: AssetOwnerType;
+  customerName?: string;
+  /**
+   * Set when the source carries ownership per record (ConnectWise knows which
+   * company each configuration belongs to). Each draft's own owner then wins
+   * over any batch-level declaration.
+   */
+  ownerFromSource?: boolean;
+}
+
+export interface MergeAssetsResult {
+  assets: Asset[];
+  created: number;
+  updated: number;
+  skipped: number;
+  skippedNonTechnical: number;
+}
+
+/**
+ * Merge freshly-mapped drafts into the existing inventory.
+ *
+ * Shared by every import path — CSV and ConnectWise both land here — because
+ * the rule about which fields survive a re-import is the one piece of this
+ * system that silently destroys analyst work when it drifts.
+ */
+export function mergeAssetDrafts(
+  drafts: Array<Omit<Asset, 'id'>>,
+  existing: Asset[],
+  opts: MergeAssetsOptions,
+): MergeAssetsResult {
+  const importedAt = opts.now;
+
+  // Index every existing asset under all of its keys so a draft carrying only
+  // a serial can still find a record that was imported with an id.
+  const existingByKey = new Map<string, Asset>();
+  for (const asset of existing) {
+    for (const key of assetMatchKeys(asset)) {
+      if (!existingByKey.has(key)) existingByKey.set(key, asset);
+    }
+  }
+
+  const result: Asset[] = [];
+  const consumed = new Set<string>();
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+  let skippedNonTechnical = 0;
+
+  for (const draft of drafts) {
+    if (!opts.includeNonTechnical && isNonTechnicalType(draft.assetType)) {
+      skippedNonTechnical++;
+      continue;
+    }
+
+    const keys = assetMatchKeys(draft);
+    // Two drafts resolving to the same record means the export listed the
+    // device twice; the first one wins rather than both being written.
+    if (keys.some((k) => consumed.has(k))) {
+      skipped++;
+      continue;
+    }
+
+    const priorKey = keys.find((k) => existingByKey.has(k));
+    const prior = priorKey ? existingByKey.get(priorKey) : undefined;
+
+    if (prior) {
+      // Claim every key of both records so a later draft cannot merge into the
+      // same asset by a weaker key.
+      for (const k of [...keys, ...assetMatchKeys(prior)]) consumed.add(k);
+
+      result.push({
+        ...prior,
+        ...draft,
+        id: prior.id,
+        // Each source keeps its own id; overwriting would make the next sync
+        // from the other system fail to recognise this record.
+        externalIds: { ...prior.externalIds, ...draft.externalIds },
+        externalId: prior.externalId ?? draft.externalId,
+        tags: prior.tags,
+        clsLevel: prior.clsLevel,
+        linkedFolderIds: prior.linkedFolderIds ?? [],
+        linkedIOCIds: prior.linkedIOCIds,
+        // Analyst corrections survive re-import by design: the export is
+        // authoritative for the base record, the overlay for what an
+        // investigation established. Dropping these here would silently
+        // discard investigation findings on the next CMDB sync.
+        overrides: prior.overrides,
+        analystNotes: prior.analystNotes,
+        // An import that declares an owner is authoritative for it (you are
+        // re-importing that organization's file), as is a source that carries
+        // ownership per record. An import that does neither must leave an
+        // existing assignment alone rather than resetting it to unknown.
+        ...(opts.ownerFromSource
+          ? { owner: draft.owner, customerName: draft.customerName }
+          : opts.owner
+            ? normalizeOwnership(opts.owner, opts.customerName)
+            : { owner: prior.owner, customerName: prior.customerName }),
+        trashed: prior.trashed,
+        trashedAt: prior.trashedAt,
+        archived: prior.archived,
+        createdBy: prior.createdBy,
+        createdAt: prior.createdAt,
+        updatedAt: importedAt,
+      });
+      updated++;
+    } else {
+      for (const k of keys) consumed.add(k);
+      result.push({ ...draft, id: nanoid() });
+      created++;
+    }
+  }
+
+  return { assets: result, created, updated, skipped, skippedNonTechnical };
+}
+
 /** Map one parsed CSV row to an Asset draft. Returns undefined for unusable rows. */
 export function rowToAsset(
   row: Record<string, string>,
@@ -218,15 +373,8 @@ export function parseAssetCSV(
   const truncated = allRows.length > MAX_ASSET_ROWS;
   const rows = truncated ? allRows.slice(0, MAX_ASSET_ROWS) : allRows;
 
-  const existingByKey = new Map<string, Asset>();
-  for (const asset of existing) existingByKey.set(assetIdentityKey(asset), asset);
-
-  const result: Asset[] = [];
-  const seenKeys = new Set<string>();
-  let created = 0;
-  let updated = 0;
-  let skipped = 0;
-  let skippedNonTechnical = 0;
+  const drafts: Array<Omit<Asset, 'id'>> = [];
+  let unusable = 0;
 
   for (const row of rows) {
     const draft = rowToAsset(row, {
@@ -237,59 +385,23 @@ export function parseAssetCSV(
       customerName: opts.customerName,
     });
     if (!draft) {
-      skipped++;
+      unusable++;
       continue;
     }
-
-    if (!opts.includeNonTechnical && isNonTechnicalType(draft.assetType)) {
-      skippedNonTechnical++;
-      continue;
-    }
-
-    const key = assetIdentityKey(draft);
-    if (seenKeys.has(key)) {
-      skipped++;
-      continue;
-    }
-    seenKeys.add(key);
-
-    const prior = existingByKey.get(key);
-    if (prior) {
-      // Preserve analyst-owned fields; the CMDB export is authoritative only
-      // for the inventory facts it actually carries.
-      result.push({
-        ...prior,
-        ...draft,
-        id: prior.id,
-        tags: prior.tags,
-        clsLevel: prior.clsLevel,
-        linkedFolderIds: prior.linkedFolderIds ?? [],
-        linkedIOCIds: prior.linkedIOCIds,
-        // Analyst corrections survive re-import by design: the export is
-        // authoritative for the base record, the overlay for what an
-        // investigation established. Dropping these here would silently
-        // discard investigation findings on the next CMDB sync.
-        overrides: prior.overrides,
-        analystNotes: prior.analystNotes,
-        // An import that declares an owner is authoritative for it (you are
-        // re-importing that organization's file). One that does not must leave
-        // an existing assignment alone rather than resetting it to unknown.
-        ...(opts.owner
-          ? normalizeOwnership(opts.owner, opts.customerName)
-          : { owner: prior.owner, customerName: prior.customerName }),
-        trashed: prior.trashed,
-        trashedAt: prior.trashedAt,
-        archived: prior.archived,
-        createdBy: prior.createdBy,
-        createdAt: prior.createdAt,
-        updatedAt: importedAt,
-      });
-      updated++;
-    } else {
-      result.push({ ...draft, id: nanoid() });
-      created++;
-    }
+    drafts.push(draft);
   }
 
-  return { assets: result, created, updated, skipped, skippedNonTechnical, errors, truncated };
+  const merged = mergeAssetDrafts(drafts, existing, {
+    now: importedAt,
+    includeNonTechnical: opts.includeNonTechnical,
+    owner: opts.owner,
+    customerName: opts.customerName,
+  });
+
+  return {
+    ...merged,
+    skipped: merged.skipped + unusable,
+    errors,
+    truncated,
+  };
 }

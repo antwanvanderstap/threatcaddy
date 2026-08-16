@@ -207,6 +207,12 @@ export interface Folder {
   recoveredAt?: number;
   /** Who is running the response. */
   incidentCommander?: string;
+  /**
+   * Record id in an external system that opened this case, e.g.
+   * `{ connectwise: '48219' }`. Keyed by system so a ticket pulled twice
+   * updates the existing investigation instead of opening a duplicate.
+   */
+  externalRefs?: Record<string, string>;
   createdBy?: string;
   updatedBy?: string;
   localOnly?: boolean;
@@ -334,12 +340,43 @@ export interface Settings {
   bgImageZoom?: number;          // zoom scale 50–200; default 100
   /** Configured external agent hosts for skill execution */
   agentHosts?: AgentHost[];
+  /** ConnectWise Manage (PSA) connection for asset sync and ticket intake. */
+  connectWise?: ConnectWiseSettings;
   /** Skills discovered from the local LLM endpoint (GET /skills) */
   llmLocalSkills?: AgentHostSkill[];
   /** Timestamp of last local skill discovery */
   llmLocalSkillsFetchedAt?: number;
   /** UI language code (e.g. 'en', 'de', 'zh-CN'). Defaults to 'en'. */
   language?: string;
+}
+
+// ── ConnectWise Manage ───────────────────────────────────────────────
+
+export interface ConnectWiseSettings {
+  enabled: boolean;
+  /** Site host, e.g. `api-eu.myconnectwise.net`, or an on-prem hostname. */
+  site: string;
+  /** CW company identifier used at login, not the display name. */
+  companyId: string;
+  publicKey: string;
+  privateKey: string;
+  /** Developer client id — CW rejects requests without one. */
+  clientId: string;
+  /**
+   * CW company identifiers that are your own organization. Configurations
+   * belonging to any other company are treated as that customer's.
+   */
+  msspIdentifiers?: string[];
+  /**
+   * Conditions applied to the configuration sync. CW's own filter syntax, e.g.
+   * `status/name="Active"`. Empty means every configuration.
+   */
+  configurationConditions?: string;
+  /** Service board to pull tickets from. Empty means every board. */
+  ticketBoard?: string;
+  lastConfigurationSyncAt?: number;
+  lastTicketSyncAt?: number;
+  lastError?: string;
 }
 
 // ── Agent Host Types ─────────────────────────────────────────────────
@@ -670,6 +707,15 @@ export interface Asset {
   id: string;
   /** External CMDB record id, kept so re-imports update rather than duplicate. */
   externalId?: string;
+  /**
+   * Record id per source system, e.g. `{ itglue: '4821', connectwise: '1173' }`.
+   *
+   * One device is usually in more than one system, and their ids are unrelated
+   * integers that will collide by coincidence. Keying identity on a bare
+   * `externalId` would let an ITGlue record merge into an unrelated ConnectWise
+   * one, so each source keeps its own id and matching is namespaced by source.
+   */
+  externalIds?: Record<string, string>;
   name: string;
   hostname?: string;
   /** Free-form status from the source system, e.g. "Production", "Inactive". */

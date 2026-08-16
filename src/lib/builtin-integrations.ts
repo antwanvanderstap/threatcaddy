@@ -1110,4 +1110,142 @@ export const BUILTIN_INTEGRATIONS: IntegrationTemplate[] = [
     rateLimit: { maxPerHour: 50, maxPerDay: 100 },
     requiredDomains: ['api.greynoise.io'],
   },
+
+  // ── ConnectWise Manage device lookup ─────────────────────────────────
+  //
+  // On-demand CMDB lookup for an observable pulled out of an event: given an
+  // IP or hostname, ask ConnectWise whether it knows the device at all.
+  //
+  // The Basic credential is assembled in a set-variable step because CW's
+  // username is a composite (`company+publicKey`) that no single config field
+  // can express — the `base64` filter turns it into the header.
+  {
+    id: 'cw-device-lookup',
+    schemaVersion: '1.0',
+    version: '1.0.0',
+    get name() { return i18n.t('builtin.cwDeviceLookup.name', { ns: 'integrations' }); },
+    get description() { return i18n.t('builtin.cwDeviceLookup.description', { ns: 'integrations' }); },
+    author: 'ThreatCaddy',
+    icon: 'server',
+    color: '#4B2E83',
+    category: 'enrichment',
+    tags: ['connectwise', 'cmdb', 'asset', 'psa'],
+    source: 'builtin',
+    createdAt: 0,
+    updatedAt: 0,
+    triggers: [
+      // No 'hostname' IOC type exists; a bare host is recorded as a domain.
+      { type: 'manual', iocTypes: ['ipv4', 'ipv6', 'domain'] },
+    ],
+    configSchema: [
+      {
+        key: 'site',
+        get label() { return i18n.t('builtin.cwDeviceLookup.config.site.label', { ns: 'integrations' }); },
+        get description() { return i18n.t('builtin.cwDeviceLookup.config.site.description', { ns: 'integrations' }); },
+        type: 'string',
+        required: true,
+        placeholder: 'api-eu.myconnectwise.net',
+      },
+      {
+        key: 'companyId',
+        get label() { return i18n.t('builtin.cwDeviceLookup.config.companyId.label', { ns: 'integrations' }); },
+        get description() { return i18n.t('builtin.cwDeviceLookup.config.companyId.description', { ns: 'integrations' }); },
+        type: 'string',
+        required: true,
+      },
+      {
+        key: 'publicKey',
+        get label() { return i18n.t('builtin.cwDeviceLookup.config.publicKey.label', { ns: 'integrations' }); },
+        get description() { return i18n.t('builtin.cwDeviceLookup.config.publicKey.description', { ns: 'integrations' }); },
+        type: 'string',
+        required: true,
+      },
+      {
+        key: 'privateKey',
+        get label() { return i18n.t('builtin.cwDeviceLookup.config.privateKey.label', { ns: 'integrations' }); },
+        get description() { return i18n.t('builtin.cwDeviceLookup.config.privateKey.description', { ns: 'integrations' }); },
+        type: 'password',
+        required: true,
+        secret: true,
+      },
+      {
+        key: 'clientId',
+        get label() { return i18n.t('builtin.cwDeviceLookup.config.clientId.label', { ns: 'integrations' }); },
+        get description() { return i18n.t('builtin.cwDeviceLookup.config.clientId.description', { ns: 'integrations' }); },
+        type: 'password',
+        required: true,
+        secret: true,
+      },
+    ],
+    steps: [
+      {
+        id: 'build-auth',
+        type: 'set-variable',
+        label: 'Assemble ConnectWise Basic credential',
+        variables: {
+          basic: '{{config.companyId}}+{{config.publicKey}}:{{config.privateKey}}',
+        },
+      },
+      {
+        id: 'lookup',
+        type: 'http',
+        label: 'Search ConnectWise configurations',
+        method: 'GET',
+        url: 'https://{{config.site}}/v4_6_release/apis/3.0/company/configurations',
+        queryParams: {
+          // CW has no cross-field search, so the observable is tried against
+          // each field it could plausibly be.
+          conditions: 'name like "%{{ioc.value}}%" or deviceIdentifier like "%{{ioc.value}}%" or ipAddress="{{ioc.value}}"',
+          pageSize: '25',
+        },
+        headers: {
+          Authorization: 'Basic {{vars.basic | base64}}',
+          clientId: '{{config.clientId}}',
+          Accept: 'application/json',
+        },
+        responseType: 'json',
+        retry: { maxRetries: 2, retryOn: [429, 500, 502, 503], backoffMs: 2000 },
+      },
+      {
+        id: 'summarize',
+        type: 'transform',
+        label: 'Extract the first match',
+        input: '{{steps.lookup.response.data}}',
+        operations: [
+          { op: 'extract', path: '0.name', as: 'name' },
+          { op: 'extract', path: '0.type.name', as: 'type' },
+          { op: 'extract', path: '0.status.name', as: 'status' },
+          { op: 'extract', path: '0.company.name', as: 'company' },
+          { op: 'extract', path: '0.site.name', as: 'site' },
+          { op: 'extract', path: '0.osType', as: 'os' },
+          { op: 'extract', path: '0.osInfo', as: 'osVersion' },
+          { op: 'extract', path: '0.serialNumber', as: 'serial' },
+          { op: 'extract', path: '0.contact.name', as: 'contact' },
+        ],
+      },
+    ],
+    outputs: [
+      {
+        type: 'display',
+        template: {
+          title: 'ConnectWise: {{ioc.value}}',
+          summary: '{{steps.summarize.name}} | {{steps.summarize.type}} | {{steps.summarize.company}} | {{steps.summarize.os}} {{steps.summarize.osVersion}}',
+        },
+      },
+      {
+        type: 'create-note',
+        // A miss is the interesting result during an investigation — it means
+        // the device is not in the CMDB at all — but it makes a useless note.
+        condition: '{{steps.summarize.name}} exists',
+        template: {
+          title: 'ConnectWise CMDB: {{ioc.value}}',
+          body: '## ConnectWise configuration\n\n**Name:** {{steps.summarize.name}}\n**Type:** {{steps.summarize.type}}\n**Status:** {{steps.summarize.status}}\n**Company:** {{steps.summarize.company}}\n**Site:** {{steps.summarize.site}}\n**OS:** {{steps.summarize.os}} {{steps.summarize.osVersion}}\n**Serial:** {{steps.summarize.serial}}\n**Contact:** {{steps.summarize.contact}}',
+        },
+      },
+    ],
+    rateLimit: { maxPerHour: 200, maxPerDay: 1000 },
+    // Filled from the configured site at install time; the literal host cannot
+    // be known here because every CW tenant has its own.
+    requiredDomains: [],
+  },
 ];

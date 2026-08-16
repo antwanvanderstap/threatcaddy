@@ -3,64 +3,52 @@
   "builtin.vtIpLookup.description": "Cari alamat IP di VirusTotal untuk mendapatkan reputasi, geolokasi, dan statistik analisis.",
   "builtin.vtIpLookup.config.apiKey.label": "API Key",
   "builtin.vtIpLookup.config.apiKey.description": "API key VirusTotal Anda",
-
   "builtin.abuseipdbCheck.name": "AbuseIPDB Check",
   "builtin.abuseipdbCheck.description": "Periksa alamat IP terhadap database AbuseIPDB untuk laporan penyalahgunaan dan skor kepercayaan.",
   "builtin.abuseipdbCheck.config.apiKey.label": "API Key",
   "builtin.abuseipdbCheck.config.apiKey.description": "API key AbuseIPDB Anda",
   "builtin.abuseipdbCheck.config.maxAgeInDays.label": "Usia Maks (hari)",
   "builtin.abuseipdbCheck.config.maxAgeInDays.description": "Usia maksimum laporan yang disertakan",
-
   "builtin.shodanHostInfo.name": "Shodan Host Info",
   "builtin.shodanHostInfo.description": "Ambil informasi host dari Shodan termasuk port terbuka, kerentanan, dan detail organisasi.",
   "builtin.shodanHostInfo.config.apiKey.label": "API Key",
   "builtin.shodanHostInfo.config.apiKey.description": "API key Shodan Anda",
-
   "builtin.slackWebhookNotify.name": "Slack Webhook Notification",
   "builtin.slackWebhookNotify.description": "Kirim peringatan IOC ke saluran Slack melalui incoming webhook dengan format Block Kit yang kaya.",
   "builtin.slackWebhookNotify.config.webhookUrl.label": "Webhook URL",
   "builtin.slackWebhookNotify.config.webhookUrl.description": "URL incoming webhook Slack",
   "builtin.slackWebhookNotify.config.channel.label": "Ganti Saluran",
   "builtin.slackWebhookNotify.config.channel.description": "Saluran opsional untuk diposting (menggantikan default webhook)",
-
   "builtin.urlhausLookup.name": "URLhaus URL Lookup",
   "builtin.urlhausLookup.description": "Cari URL di URLhaus (abuse.ch) untuk aktivitas distribusi malware yang diketahui. Memerlukan API key gratis dari auth.abuse.ch.",
   "builtin.urlhausLookup.config.apiKey.label": "Auth Key",
   "builtin.urlhausLookup.config.apiKey.description": "Auth Key abuse.ch Anda (gratis di auth.abuse.ch)",
-
   "builtin.urlhausDomainLookup.name": "URLhaus Domain Lookup",
   "builtin.urlhausDomainLookup.description": "Cari domain di URLhaus (abuse.ch) untuk URL distribusi malware yang diketahui. Memerlukan API key gratis dari auth.abuse.ch.",
   "builtin.urlhausDomainLookup.config.apiKey.label": "Auth Key",
   "builtin.urlhausDomainLookup.config.apiKey.description": "Auth Key abuse.ch Anda (gratis di auth.abuse.ch)",
-
   "builtin.shodanInternetdb.name": "Shodan InternetDB",
   "builtin.shodanInternetdb.description": "Pengayaan IP gratis dari Shodan — port terbuka, CVE, hostname, dan tag. Tidak memerlukan API key.",
-
   "builtin.vtDomainLookup.name": "VirusTotal Domain Lookup",
   "builtin.vtDomainLookup.description": "Cari domain di VirusTotal untuk reputasi, rekaman DNS, dan statistik analisis.",
   "builtin.vtDomainLookup.config.apiKey.label": "API Key",
   "builtin.vtDomainLookup.config.apiKey.description": "API key VirusTotal Anda",
-
   "builtin.vtHashLookup.name": "VirusTotal Hash Lookup",
   "builtin.vtHashLookup.description": "Cari hash file (MD5/SHA1/SHA256) di VirusTotal untuk hasil deteksi malware.",
   "builtin.vtHashLookup.config.apiKey.label": "API Key",
   "builtin.vtHashLookup.config.apiKey.description": "API key VirusTotal Anda",
-
   "builtin.threatfoxLookup.name": "ThreatFox IOC Search",
   "builtin.threatfoxLookup.description": "Cari IOC yang terkait malware di ThreatFox (abuse.ch) — server C2, URL distribusi, hash payload.",
   "builtin.threatfoxLookup.config.apiKey.label": "Auth Key",
   "builtin.threatfoxLookup.config.apiKey.description": "Auth Key abuse.ch Anda (gratis di auth.abuse.ch)",
-
   "builtin.malwarebazaarLookup.name": "MalwareBazaar Hash Lookup",
   "builtin.malwarebazaarLookup.description": "Cari hash file di MalwareBazaar (abuse.ch) — sampel malware yang diketahui, tanda tangan, tag, dan intelijen vendor.",
   "builtin.malwarebazaarLookup.config.apiKey.label": "Auth Key",
   "builtin.malwarebazaarLookup.config.apiKey.description": "Auth Key abuse.ch Anda (gratis di auth.abuse.ch)",
-
   "builtin.greynoiseCommunity.name": "GreyNoise Community",
   "builtin.greynoiseCommunity.description": "Klasifikasikan IP sebagai jinak, berbahaya, atau tidak diketahui menggunakan GreyNoise. Mengidentifikasi pemindai, bot, dan layanan tepercaya yang diketahui.",
   "builtin.greynoiseCommunity.config.apiKey.label": "API Key",
   "builtin.greynoiseCommunity.config.apiKey.description": "API key GreyNoise Community Anda (gratis di greynoise.io)",
-
   "panel.integrations": "Integrasi",
   "panel.description": "Hubungkan ke feed intelijen ancaman, API pengayaan, dan pipeline ekspor.",
   "panel.loadingIntegrations": "Memuat integrasi...",
@@ -74,7 +62,6 @@
   "panel.noConfigOptions": "Integrasi ini tidak memiliki opsi yang dapat dikonfigurasi.",
   "panel.availableIntegrations": "Integrasi Tersedia",
   "panel.createCustom": "Buat Kustom",
-
   "catalog.searchIntegrations": "Cari integrasi...",
   "catalog.noTemplatesMatch": "Tidak ada template yang cocok dengan pencarian Anda.",
   "catalog.teamTemplates": "Template Tim",
@@ -96,7 +83,6 @@
   "catalog.install": "Pasang",
   "catalog.update": "Perbarui",
   "catalog.removeFromTeam": "Hapus dari tim",
-
   "builder.backToCatalog": "Kembali ke Katalog",
   "builder.createIntegration": "Buat Integrasi",
   "builder.previewJson": "Pratinjau JSON",
@@ -149,19 +135,28 @@
   "builder.select": "Pilih...",
   "builder.req": "Wajib",
   "builder.secret": "Rahasia",
-
   "run.runIntegration": "Jalankan Integrasi",
   "run.noIntegrationsForType": "Tidak ada integrasi untuk jenis IOC ini.",
   "run.setupIntegrations": "Siapkan integrasi →",
   "run.noIntegrationsTitle": "Tidak ada integrasi terpasang — siapkan di Pengaturan > Integrasi",
-
   "history.noRunsYet": "Belum ada riwayat integrasi.",
   "history.unknownIntegration": "Integrasi Tidak Diketahui",
   "history.apiCalls": "{{count}} panggilan API{{suffix}}",
   "history.created": "{{count}} dibuat",
   "history.updated": "{{count}} diperbarui",
   "history.noStepLog": "Tidak ada log langkah yang tercatat.",
-
   "config.show": "Tampilkan",
-  "config.hide": "Sembunyikan"
+  "config.hide": "Sembunyikan",
+  "builtin.cwDeviceLookup.name": "Pencarian Perangkat ConnectWise",
+  "builtin.cwDeviceLookup.description": "Telusuri daftar konfigurasi ConnectWise Manage untuk nama host atau IP yang terlihat dalam sebuah peristiwa, dan laporkan apa yang diketahui CMDB tentangnya.",
+  "builtin.cwDeviceLookup.config.site.label": "Situs",
+  "builtin.cwDeviceLookup.config.site.description": "Host ConnectWise Anda, mis. api-eu.myconnectwise.net",
+  "builtin.cwDeviceLookup.config.companyId.label": "ID perusahaan",
+  "builtin.cwDeviceLookup.config.companyId.description": "Pengenal yang Anda gunakan untuk masuk, bukan nama tampilan",
+  "builtin.cwDeviceLookup.config.publicKey.label": "Kunci publik",
+  "builtin.cwDeviceLookup.config.publicKey.description": "Kunci publik anggota API",
+  "builtin.cwDeviceLookup.config.privateKey.label": "Kunci privat",
+  "builtin.cwDeviceLookup.config.privateKey.description": "Kunci privat anggota API",
+  "builtin.cwDeviceLookup.config.clientId.label": "ID klien",
+  "builtin.cwDeviceLookup.config.clientId.description": "ID klien pengembang dari developer.connectwise.com"
 }

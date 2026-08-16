@@ -5,7 +5,10 @@ import type { Asset, AssetOwnerType, OverridableAssetField } from '../types';
 import { normalizeOwnership } from '../lib/asset-ownership';
 import { setOverride, clearOverride, type SetOverrideOptions } from '../lib/asset-overrides';
 import { purgeOldTrash } from '../lib/trash-purge';
-import { parseAssetCSV, type AssetImportResult } from '../lib/asset-import';
+import { parseAssetCSV, mergeAssetDrafts, type AssetImportResult } from '../lib/asset-import';
+import { configurationsToAssets, type ConnectWiseCredentials } from '../lib/connectwise';
+import { fetchConfigurations } from '../lib/connectwise-client';
+import type { ServerProxyConfig } from '../lib/proxy-fetch';
 
 /**
  * Manages the org-wide asset inventory (CMDB).
@@ -100,6 +103,58 @@ export function useAssets() {
   }, [loadAssets]);
 
   /**
+   * Pull the ConnectWise configuration list into the inventory.
+   *
+   * Goes through the same merge as the CSV path, so analyst corrections and
+   * investigation links survive a sync exactly as they survive a re-import.
+   */
+  const syncConnectWiseAssets = useCallback(async (
+    creds: ConnectWiseCredentials,
+    opts: {
+      conditions?: string;
+      msspIdentifiers?: string[];
+      server?: ServerProxyConfig;
+      signal?: AbortSignal;
+      onProgress?: (fetched: number) => void;
+    } = {},
+  ): Promise<AssetImportResult> => {
+    const { getCurrentUserName } = await import('../lib/utils');
+    const now = Date.now();
+
+    const { items, truncated } = await fetchConfigurations(creds, opts.conditions, {
+      server: opts.server,
+      signal: opts.signal,
+      onPage: (_page, _n, total) => opts.onProgress?.(total),
+    });
+
+    const { drafts, unusable } = configurationsToAssets(items, {
+      importedAt: now,
+      createdBy: getCurrentUserName(),
+      ownership: { msspIdentifiers: opts.msspIdentifiers },
+    });
+
+    const current = await db.assets.toArray();
+    const merged = mergeAssetDrafts(drafts, current, {
+      now,
+      // ConnectWise knows which company each configuration belongs to, so
+      // ownership is read from the record rather than declared for the batch.
+      ownerFromSource: true,
+    });
+
+    if (merged.assets.length > 0) await db.assets.bulkPut(merged.assets);
+    await loadAssets();
+
+    return {
+      ...merged,
+      skipped: merged.skipped + unusable,
+      errors: truncated
+        ? ['ConnectWise returned more configurations than the page budget allows. Narrow the sync conditions to reach the rest.']
+        : [],
+      truncated,
+    };
+  }, [loadAssets]);
+
+  /**
    * Correct a single asset field. Stored as an override rather than written
    * over the imported value, so a later CMDB re-import cannot destroy it.
    */
@@ -188,6 +243,7 @@ export function useAssets() {
     restoreAsset,
     emptyTrashAssets,
     importAssetCSV,
+    syncConnectWiseAssets,
     linkAssetToFolder,
     unlinkAssetFromFolder,
     setAssetField,
