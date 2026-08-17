@@ -191,6 +191,32 @@ Caddy obtains and renews certificates automatically. `TC_TLS_ISSUER` picks how:
 | `acme` (default) | The names resolve publicly and 80/443 reach the VM |
 | `internal` | LAN-only. Caddy issues from its own CA |
 
+### Deploy against staging first
+
+Let's Encrypt production permits only a handful of failed validations per
+hostname per hour. A wrong DNS record or a missing port forward will exhaust
+that before you have finished diagnosing it, and then you wait.
+
+So prove the path against staging, which is far more forgiving:
+
+```bash
+TC_ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory
+```
+
+Bring the stack up, and watch for issuance:
+
+```bash
+docker compose -f docker-compose.selfhost.yml logs -f web | grep -i "certificate obtained"
+```
+
+Browsers will not trust a staging certificate — that warning is expected and
+means it worked. Once you see issuance succeed, clear `TC_ACME_CA`, restart
+the `web` service, and you get a real certificate on the first attempt.
+
+Both hostnames must resolve **before** you start, including the admin one.
+Caddy requests a certificate for every site in the Caddyfile, and a name that
+does not exist in DNS simply cannot be validated.
+
 With `internal`, browsers will not trust the certificate until you install
 Caddy's root once per client machine:
 

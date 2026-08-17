@@ -25,6 +25,7 @@ services:
       TC_ADMIN_DOMAIN: ${TC_ADMIN_DOMAIN:?Set TC_ADMIN_DOMAIN in .env (e.g. admin.threatcaddy.example.com)}
       TC_TLS_EMAIL: ${TC_TLS_EMAIL:-}
       TC_TLS_ISSUER: ${TC_TLS_ISSUER:-acme}
+      TC_ACME_CA: ${TC_ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}
       TC_ADMIN_ALLOW_IPS: ${TC_ADMIN_ALLOW_IPS:-private_ranges}
     volumes:
       # Issued certificates. Losing this volume means re-issuing on every

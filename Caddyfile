@@ -8,6 +8,13 @@
 	# ACME registration address. Optional, but it is where the CA sends expiry
 	# warnings if automatic renewal ever stops working.
 	email {$TC_TLS_EMAIL}
+
+	# Which ACME directory to use. Point this at Let's Encrypt *staging* for a
+	# first deployment: production allows only a handful of failed validations
+	# per hostname per hour, and a misconfigured port forward burns through
+	# them before you have found the problem. Staging certificates are
+	# untrusted by browsers but prove the whole path works. See .env.example.
+	acme_ca {$TC_ACME_CA:https://acme-v02.api.letsencrypt.org/directory}
 }
 
 # ── Application ──────────────────────────────────────────────────────
