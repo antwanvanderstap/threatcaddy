@@ -91,9 +91,23 @@ firewalled independently of the app.
 | `threatcaddy.example.com` | Client and API |
 | `admin.threatcaddy.example.com` | Admin panel |
 
-For a public certificate, both must be reachable from the internet on ports
-80 and 443 — forward them at your router. For a LAN-only deployment, point
-internal DNS at the VM and use the `internal` issuer instead (§6).
+**Both names must point at the VM's LAN address**, not at your WAN address.
+That distinction matters more than it looks: many consumer routers do not
+hairpin, so a LAN client that resolves the name to your public IP cannot
+reach the VM behind it even though the port forward is correct.
+
+Three ways to arrange that, in descending order of robustness:
+
+1. **Split-horizon DNS.** A local resolver — your router, Pi-hole, Unbound —
+   answers these names with the LAN address for internal clients, leaving
+   public DNS untouched. Works for every device automatically, phones
+   included, and is unaffected by rebinding protection.
+2. **Point the public record at the private address.** One edit at your DNS
+   provider. Legal, and common for internal-only services. Be aware that some
+   resolvers and routers strip RFC1918 answers from public DNS as
+   anti-rebinding protection, which breaks resolution with no obvious clue.
+3. **`/etc/hosts` per machine.** No infrastructure needed, but manual on every
+   device and impractical on phones.
 
 ### Environment
 
@@ -137,28 +151,40 @@ Rotating the pair invalidates every existing session.
 docker compose -f docker-compose.selfhost.yml up -d --build
 ```
 
-### Memory-constrained host: build the client on your Mac
+### Memory-constrained host: build nothing on the server
 
 If `free -m` showed less than ~4GB available, building in place will be
-OOM-killed part-way through the Vite bundle. Build the client natively
-instead — it is faster anyway — and ship the output:
+OOM-killed part-way through. Two things are expensive, and neither has to
+happen on the server:
 
 ```bash
-pnpm install
-pnpm build                    # produces dist/
+# 1. Caddy with the IONOS DNS provider — fetched pre-built, no Go toolchain
+./scripts/fetch-caddy.sh
 
+# 2. The client bundle — built natively on your machine, which is faster anyway
+pnpm install
+pnpm build
+
+# 3. The image build is then pure file copying
 TC_WEB_BUILD_TARGET=prebuilt \
   docker compose -f docker-compose.selfhost.yml up -d --build
 ```
 
-The `prebuilt` target in `Dockerfile.web` copies your local `dist/` onto the
-Caddy image rather than compiling inside it, so the remote build needs
-essentially no memory. Everything else is identical.
+`scripts/fetch-caddy.sh` pulls a `linux/amd64` binary from Caddy's official
+build service with `caddy-dns/ionos` compiled in. That avoids both a Go
+toolchain and any cross-compilation, and it means the `prebuilt` target
+compiles nothing at all.
 
-`dist/` is intentionally *not* in `.dockerignore` for exactly this reason.
+This matters more than it sounds. A `xcaddy` build wants 1–2GB and the Vite
+bundle rather more; running either on a server that is already hosting other
+services can starve them badly enough to take them offline. Keep compilation
+off the deployment host.
 
-> Rebuild and redeploy the client after every `git pull`, or the container
-> keeps serving the old bundle. The API image rebuilds normally either way.
+`dist/` and `caddy-bin/` are intentionally *not* in `.dockerignore` for exactly
+this reason — both are inputs to the `prebuilt` target.
+
+> Re-run steps 1–3 after every `git pull`, or the container keeps serving the
+> old bundle. The API image rebuilds normally either way.
 
 ### Verify
 
@@ -193,26 +219,75 @@ before the request ever left.
 
 ## 6. TLS
 
-Caddy obtains and renews certificates automatically. `TC_TLS_ISSUER` picks how:
+TLS is not optional here. `crypto.subtle` is only exposed in a secure context,
+so served over plain HTTP the client loses at-rest encryption, encrypted
+backups and sharing — `isSecureContext()` in `src/lib/crypto.ts` gates them and
+the UI shows an "HTTPS required" warning. A LAN deployment still needs a
+certificate.
 
-| Value | Use when |
-|---|---|
-| `acme` (default) | The names resolve publicly and 80/443 reach the VM |
-| `internal` | LAN-only. Caddy issues from its own CA |
+`TC_TLS_MODE` selects how Caddy gets one:
+
+| Mode | Inbound needed | Trusted by clients | Use when |
+|---|---|---|---|
+| `dns-ionos` | none | yes | The domain is at IONOS. Best option for a LAN-only host |
+| `internal` | none | after installing the root | No domain, or no API token |
+| `acme-http` | ports 80 + 443 | yes | Publicly reachable host |
+
+### dns-ionos — trusted certificates without inbound traffic
+
+ACME normally proves control by answering on port 80. A residential ISP that
+blocks inbound traffic makes that impossible. The DNS-01 challenge proves
+control by publishing a TXT record instead, which needs no inbound
+connectivity at all — so a machine that is entirely unreachable from the
+internet can still hold a publicly trusted certificate.
+
+Stock Caddy cannot do this; the DNS provider must be compiled in. Run
+`./scripts/fetch-caddy.sh`, which downloads a binary with
+`caddy-dns/ionos` already built in from Caddy's official build service — no Go
+toolchain and no compilation on either machine. (The `full` build target
+compiles it with `xcaddy` instead, for hosts with the memory to spare.)
+
+Create a token in the IONOS DNS dashboard with permission to write TXT
+records on the zone, then:
+
+```env
+TC_TLS_MODE=dns-ionos
+TC_IONOS_API_TOKEN=<public-prefix>.<secret>
+```
+
+Renewal is automatic and needs no further inbound access, so this keeps
+working indefinitely behind a hostile ISP.
+
+> Use the staging directory on the first run — see below. A wrong token fails
+> validation, and production rate limits are unforgiving.
+
+### internal — Caddy's own CA
+
+No external dependency and no token, but every client must trust the root
+certificate once:
+
+```bash
+docker compose -f docker-compose.selfhost.yml cp \
+  web:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt
+```
+
+Trust it in Keychain Access on macOS, or the OS trust store elsewhere. This
+is the awkward part on phones and tablets, which is why `dns-ionos` is
+preferable when the domain allows it.
 
 ### Deploy against staging first
 
 Let's Encrypt production permits only a handful of failed validations per
-hostname per hour. A wrong DNS record or a missing port forward will exhaust
-that before you have finished diagnosing it, and then you wait.
+hostname per hour. A wrong token or a DNS record that has not propagated will
+exhaust that before you have finished diagnosing it, and then you wait.
 
-So prove the path against staging, which is far more forgiving:
+So prove the path against staging:
 
 ```bash
 TC_ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory
 ```
 
-Bring the stack up, and watch for issuance:
+Bring the stack up and watch for issuance:
 
 ```bash
 docker compose -f docker-compose.selfhost.yml logs -f web | grep -i "certificate obtained"
@@ -222,23 +297,9 @@ Browsers will not trust a staging certificate — that warning is expected and
 means it worked. Once you see issuance succeed, clear `TC_ACME_CA`, restart
 the `web` service, and you get a real certificate on the first attempt.
 
-Both hostnames must resolve **before** you start, including the admin one.
-Caddy requests a certificate for every site in the Caddyfile, and a name that
-does not exist in DNS simply cannot be validated.
-
-With `internal`, browsers will not trust the certificate until you install
-Caddy's root once per client machine:
-
-```bash
-docker compose -f docker-compose.selfhost.yml cp \
-  web:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt
-```
-
-Trust it in Keychain Access on macOS, or the OS trust store elsewhere.
-
 The `caddy-data` volume holds issued certificates. Losing it forces
-re-issuance on every restart, which hits Let's Encrypt rate limits fast — keep
-it in your backup set.
+re-issuance on every restart, which hits rate limits fast — keep it in your
+backup set.
 
 ---
 

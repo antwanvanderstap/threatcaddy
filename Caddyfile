@@ -20,10 +20,18 @@
 # ── Application ──────────────────────────────────────────────────────
 {$TC_DOMAIN} {
 	tls {
-		# `acme` for a public domain. `internal` issues from Caddy's own CA
-		# for a LAN-only hostname that no public CA is able to validate —
-		# browsers then need Caddy's root cert trusted once.
-		issuer {$TC_TLS_ISSUER:acme}
+		# How certificates are obtained, selected by TC_TLS_MODE:
+		#
+		#   dns-ionos   ACME DNS-01 via IONOS. No inbound traffic needed, and
+		#               the certificate is publicly trusted.
+		#   internal    Caddy's own CA. No dependencies; each client must
+		#               trust the root once.
+		#   acme-http   Classic ACME HTTP-01. Needs 80/443 reachable.
+		#
+		# Env substitution happens before parsing, so this resolves to a
+		# literal path. An unknown mode fails loudly at startup rather than
+		# silently falling back to something less safe.
+		import /etc/caddy/tls-mode/{$TC_TLS_MODE:internal}.conf
 	}
 
 	encode zstd gzip
@@ -66,7 +74,7 @@
 # Widen TC_ADMIN_ALLOW_IPS only as far as you actually need.
 {$TC_ADMIN_DOMAIN} {
 	tls {
-		issuer {$TC_TLS_ISSUER:acme}
+		import /etc/caddy/tls-mode/{$TC_TLS_MODE:internal}.conf
 	}
 
 	@allowed remote_ip {$TC_ADMIN_ALLOW_IPS:private_ranges}

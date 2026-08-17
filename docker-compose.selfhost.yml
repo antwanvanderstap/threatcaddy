@@ -24,7 +24,10 @@ services:
       TC_DOMAIN: ${TC_DOMAIN:?Set TC_DOMAIN in .env (e.g. threatcaddy.example.com)}
       TC_ADMIN_DOMAIN: ${TC_ADMIN_DOMAIN:?Set TC_ADMIN_DOMAIN in .env (e.g. admin.threatcaddy.example.com)}
       TC_TLS_EMAIL: ${TC_TLS_EMAIL:-}
-      TC_TLS_ISSUER: ${TC_TLS_ISSUER:-acme}
+      # dns-ionos | internal | acme-http — see caddy/tls-mode/
+      TC_TLS_MODE: ${TC_TLS_MODE:-internal}
+      # Only read by the dns-ionos mode. Treated as a secret.
+      TC_IONOS_API_TOKEN: ${TC_IONOS_API_TOKEN:-}
       TC_ACME_CA: ${TC_ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}
       TC_ADMIN_ALLOW_IPS: ${TC_ADMIN_ALLOW_IPS:-private_ranges}
     volumes:
