@@ -96,18 +96,87 @@ That distinction matters more than it looks: many consumer routers do not
 hairpin, so a LAN client that resolves the name to your public IP cannot
 reach the VM behind it even though the port forward is correct.
 
-Three ways to arrange that, in descending order of robustness:
+Three ways to arrange that, in descending order of robustness.
 
-1. **Split-horizon DNS.** A local resolver — your router, Pi-hole, Unbound —
-   answers these names with the LAN address for internal clients, leaving
-   public DNS untouched. Works for every device automatically, phones
-   included, and is unaffected by rebinding protection.
-2. **Point the public record at the private address.** One edit at your DNS
-   provider. Legal, and common for internal-only services. Be aware that some
-   resolvers and routers strip RFC1918 answers from public DNS as
-   anti-rebinding protection, which breaks resolution with no obvious clue.
-3. **`/etc/hosts` per machine.** No infrastructure needed, but manual on every
-   device and impractical on phones.
+#### 1. Split-horizon DNS (recommended)
+
+A local resolver answers these names with the LAN address for internal
+clients, leaving public DNS untouched. Works on every device automatically,
+phones included, and is immune to rebinding filters.
+
+**UniFi** (Network 8.x and later) — no extra infrastructure if you already
+run a UniFi gateway, which is usually also the LAN's DNS server:
+
+> Settings → Routing & DNS → DNS → **Create Entry**
+> Record type `A`, hostname `threatcaddy.example.com`, value `192.168.1.166`.
+> Repeat for the admin hostname.
+
+Menu wording moves between releases; older builds have it under
+Settings → Networks → *(network)* → DHCP Name Server, or a Custom DNS Record
+section.
+
+**Pi-hole v6** — Settings → Local DNS Records, then add one entry per
+hostname. **Pi-hole v5** — Local DNS → DNS Records. Equivalent from the CLI:
+
+```bash
+echo "192.168.1.166 threatcaddy.example.com" | sudo tee -a /etc/pihole/custom.list
+echo "192.168.1.166 admin.threatcaddy.example.com" | sudo tee -a /etc/pihole/custom.list
+sudo pihole restartdns
+```
+
+A Pi-hole only takes effect if clients actually use it. Point DHCP at it —
+on UniFi that is Settings → Networks → *(your network)* → DHCP Name Server →
+Manual — otherwise clients keep querying the gateway and nothing changes.
+
+> **Use an A record, not a CNAME.** Pi-hole offers both, and the CNAME form
+> looks like it should work. It cannot: a CNAME target must be a hostname that
+> itself resolves, so `tc.example.com CNAME 192.168.1.166.` dead-ends and
+> clients get no address at all. The symptom is a name that "has a record" in
+> Pi-hole yet still fails everywhere. Verify with
+> `dig @<pihole> <name>` and check the record type in the ANSWER section.
+
+Before pointing DHCP at any resolver, confirm it will actually serve your
+clients:
+
+```bash
+dig @<resolver> example.com          # expect an address
+```
+
+`status: REFUSED` means it is answering local records but declining to
+recurse, usually an access-control or listening-mode setting. Switching DHCP
+to a resolver in that state takes DNS down for the whole network.
+
+Local records take precedence over upstream, so answering a public name with
+a private address here is fine and is not affected by upstream rebinding
+protection.
+
+#### 2. Point the public record at the private address
+
+One edit at your DNS provider. Legal, and common for internal-only services.
+Some resolvers and routers strip RFC1918 answers from public DNS as
+anti-rebinding protection, which breaks resolution with no obvious clue.
+
+#### 3. `/etc/hosts` per machine
+
+No infrastructure, immediate, and useful for a first deployment before the
+resolver is set up:
+
+```bash
+sudo tee -a /etc/hosts >/dev/null <<'HOSTS'
+
+# ThreatCaddy (Proxmox)
+192.168.1.166	threatcaddy.example.com
+192.168.1.166	admin.threatcaddy.example.com
+HOSTS
+sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder   # macOS
+```
+
+Manual on every device and impossible on most phones, so treat it as a
+stopgap.
+
+> None of this affects certificates. DNS-01 validates through TXT records at
+> your DNS provider, which is unrelated to what answers the A record — so a
+> hosts file or a split-horizon override cannot break issuance or renewal.
 
 ### Environment
 
