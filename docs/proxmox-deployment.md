@@ -187,8 +187,8 @@ cp .env.example .env
 Fill in, at minimum:
 
 ```bash
-# Database password
-openssl rand -base64 32                      # -> POSTGRES_PASSWORD
+# Database password — hex, not base64 (see note below)
+openssl rand -hex 32                         # -> POSTGRES_PASSWORD
 
 # JWT signing pair
 openssl genpkey -algorithm Ed25519 -out private.pem
@@ -198,6 +198,11 @@ openssl pkey -in private.pem -pubout -out public.pem
 { printf 'JWT_PRIVATE_KEY="'; cat private.pem; printf '"\n'
   printf 'JWT_PUBLIC_KEY="';  cat public.pem;  printf '"\n'; } >> .env
 ```
+
+`POSTGRES_PASSWORD` must be URL-safe. It is interpolated into `DATABASE_URL`,
+and `openssl rand -base64 32` emits `/`, `+` and `=`; a `/` terminates the URL
+authority section and the server exits at startup with `ERR_INVALID_URL`.
+`openssl rand -hex 32` gives the same 256 bits without the problem.
 
 The PEM newlines must survive into the container. Compose preserves them
 inside quotes; flattening the key to one line with literal `\n` escapes gets
