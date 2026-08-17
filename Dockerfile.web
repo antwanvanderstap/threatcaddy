@@ -1,0 +1,58 @@
+# ThreatCaddy SPA + reverse proxy.
+#
+# One container serves the built client and terminates TLS in front of the
+# API, so the browser talks to a single origin and the app server never needs
+# a published port of its own.
+#
+# Two build targets, because the client build is memory-hungry (tsc plus a
+# Vite bundle carrying Excalidraw, Cytoscape and Mermaid) and the deployment
+# host may not have the headroom:
+#
+#   --target full      build the client inside the image. Self-contained;
+#                      needs ~4GB free on whatever runs the build.
+#   --target prebuilt  copy a dist/ you already built elsewhere. Needs almost
+#                      no memory, so it suits a small or busy server.
+#
+# Compose selects this via TC_WEB_BUILD_TARGET; `full` is the default.
+
+# ── Client build ─────────────────────────────────────────────────────
+FROM node:22-alpine AS build
+
+WORKDIR /app
+RUN corepack enable
+
+# Dependencies first: a source-only change then reuses this layer.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+RUN pnpm install --frozen-lockfile
+
+# `pnpm build` runs `tsc -b`, which builds both project references.
+# tsconfig.node.json covers vite.config.ts, playwright.config.ts and e2e/,
+# so those must be present for the type build to resolve even though nothing
+# in this image ever runs them.
+COPY tsconfig.json tsconfig.app.json tsconfig.node.json ./
+COPY vite.config.ts playwright.config.ts index.html ./
+COPY e2e/ ./e2e/
+COPY public/ ./public/
+COPY src/ ./src/
+
+# TC_ANALYTICS is deliberately left unset — see cloudflareAnalytics() in
+# vite.config.ts. A self-hosted build must not fetch a third-party beacon.
+RUN pnpm build
+
+# ── Serve a dist/ built on another machine ───────────────────────────
+FROM caddy:2-alpine AS prebuilt
+
+COPY dist /srv
+COPY Caddyfile /etc/caddy/Caddyfile
+# CNAME is a GitHub Pages artifact that rides along in the build output.
+# Harmless, but it means nothing here and only confuses whoever finds it.
+RUN rm -f /srv/CNAME
+EXPOSE 80 443
+
+# ── Serve the dist/ built above (default target) ─────────────────────
+FROM caddy:2-alpine AS full
+
+COPY --from=build /app/dist /srv
+COPY Caddyfile /etc/caddy/Caddyfile
+RUN rm -f /srv/CNAME
+EXPOSE 80 443

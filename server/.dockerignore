@@ -1,0 +1,13 @@
+# The server image installs its own dependencies and compiles from src/.
+# Shipping the local build output or node_modules only bloats the context
+# and risks baking host-built binaries into the image.
+
+node_modules
+dist
+*.tsbuildinfo
+
+# Secrets must never reach an image layer.
+.env
+.env.*
+!.env.example
+*.pem

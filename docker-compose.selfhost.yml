@@ -1,0 +1,90 @@
+# Full self-hosted ThreatCaddy stack: client, API and database behind one
+# Caddy instance that terminates TLS.
+#
+#   docker compose -f docker-compose.selfhost.yml up -d --build
+#
+# docker-compose.yml stays the minimal API-only stack with ports published
+# straight to the host — useful when you run the client elsewhere. Use this
+# file to deploy. See docs/proxmox-deployment.md.
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      # `full` builds the client in the image and needs ~4GB free on the
+      # machine running the build. Set TC_WEB_BUILD_TARGET=prebuilt on a
+      # memory-tight host and ship a dist/ you built elsewhere instead.
+      target: ${TC_WEB_BUILD_TARGET:-full}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      TC_DOMAIN: ${TC_DOMAIN:?Set TC_DOMAIN in .env (e.g. threatcaddy.example.com)}
+      TC_ADMIN_DOMAIN: ${TC_ADMIN_DOMAIN:?Set TC_ADMIN_DOMAIN in .env (e.g. admin.threatcaddy.example.com)}
+      TC_TLS_EMAIL: ${TC_TLS_EMAIL:-}
+      TC_TLS_ISSUER: ${TC_TLS_ISSUER:-acme}
+      TC_ADMIN_ALLOW_IPS: ${TC_ADMIN_ALLOW_IPS:-private_ranges}
+    volumes:
+      # Issued certificates. Losing this volume means re-issuing on every
+      # restart, which will hit Let's Encrypt rate limits quickly.
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - server
+    restart: unless-stopped
+
+  server:
+    build: ./server
+    # No published ports. The API is reachable only through the proxy, so TLS
+    # cannot be bypassed and the admin panel is never exposed on the LAN.
+    expose:
+      - "3001"
+      - "3002"
+    environment:
+      DATABASE_URL: postgres://tc:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/threatcaddy
+      PORT: "3001"
+      ADMIN_PORT: "3002"
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?Set JWT_PRIVATE_KEY in .env}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?Set JWT_PUBLIC_KEY in .env}
+      FILE_STORAGE_PATH: /data/files
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?Set ALLOWED_ORIGINS in .env to your https origin}
+      # Rate limiting keys off the client IP. Behind a proxy every request
+      # arrives from Caddy, so without this one bucket is shared by all
+      # clients and the per-IP limits stop meaning anything.
+      TRUST_PROXY: "1"
+      ADMIN_SECRET: ${ADMIN_SECRET:-}
+      BOT_MASTER_KEY: ${BOT_MASTER_KEY:-}
+      # LLM API keys (optional)
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+    volumes:
+      - file-data:/data/files
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: tc
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: threatcaddy
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tc -d threatcaddy"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pg-data:
+  file-data:
+  caddy-data:
+  caddy-config:

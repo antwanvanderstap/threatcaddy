@@ -1,0 +1,43 @@
+# Keep the build context small. It is streamed to the Docker daemon on every
+# build, which for a remote host over an SSH context means across the network.
+# Without this the context is ~735MB, nearly all of it node_modules.
+
+node_modules
+**/node_modules
+.git
+.github
+
+# Build outputs.
+#
+# dist/ is deliberately NOT ignored: the `prebuilt` target in Dockerfile.web
+# copies it in when the client was built on another machine.
+dist-single
+*.tsbuildinfo
+
+# The server image builds from its own context (`build: ./server`), where this
+# file does not apply — server/.dockerignore covers it. Nothing in
+# Dockerfile.web reads server/, so keep it out of the client context entirely.
+server
+
+# Local configuration and secrets. These must never reach an image layer.
+.env
+.env.*
+!.env.example
+*.pem
+
+# Tooling and editor state
+.claude
+.vscode
+.idea
+.DS_Store
+
+# Test artifacts. e2e/ itself is kept — tsconfig.node.json references it, so
+# `tsc -b` needs it present even though nothing in the image runs it.
+coverage
+playwright-report
+test-results
+e2e/screenshots
+
+# Packaged extension builds
+chrome.zip
+firefox.zip

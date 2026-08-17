@@ -1,0 +1,75 @@
+# ThreatCaddy self-hosted reverse proxy.
+#
+# Serves the built SPA and fronts the API on one origin, so the client can be
+# pointed at plain `https://your-domain` with no CORS exception and no port
+# numbers. Every value comes from the environment — see .env.example.
+
+{
+	# ACME registration address. Optional, but it is where the CA sends expiry
+	# warnings if automatic renewal ever stops working.
+	email {$TC_TLS_EMAIL}
+}
+
+# ── Application ──────────────────────────────────────────────────────
+{$TC_DOMAIN} {
+	tls {
+		# `acme` for a public domain. `internal` issues from Caddy's own CA
+		# for a LAN-only hostname that no public CA is able to validate —
+		# browsers then need Caddy's root cert trusted once.
+		issuer {$TC_TLS_ISSUER:acme}
+	}
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+	}
+
+	# The API, the sync WebSocket and the health probe all live on the app
+	# port. reverse_proxy performs the WebSocket upgrade on its own, so /ws
+	# needs no special handling beyond being routed here.
+	@api path /api/* /ws /health
+	handle @api {
+		reverse_proxy server:3001 {
+			# Backup uploads run to 100MB. The default read timeout would cut
+			# a slow one off part-way through.
+			transport http {
+				read_timeout 300s
+			}
+		}
+	}
+
+	# Everything else is the SPA. An unknown path must fall through to
+	# index.html rather than 404 — the client owns its own routing, so a
+	# deep link into an investigation is not a missing file.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# ── Admin panel ──────────────────────────────────────────────────────
+#
+# Creates the first admin user and exposes audit data, so it is refused
+# outside the allowed networks before the request reaches the app at all.
+# Widen TC_ADMIN_ALLOW_IPS only as far as you actually need.
+{$TC_ADMIN_DOMAIN} {
+	tls {
+		issuer {$TC_TLS_ISSUER:acme}
+	}
+
+	@allowed remote_ip {$TC_ADMIN_ALLOW_IPS:private_ranges}
+	handle @allowed {
+		reverse_proxy server:3002
+	}
+
+	# Deliberately a 404 rather than a 403: an unauthorised scanner learns
+	# nothing about whether an admin panel exists here.
+	handle {
+		respond "Not found" 404
+	}
+}

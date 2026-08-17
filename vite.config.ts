@@ -27,11 +27,20 @@ function stripHeavyAssets(): Plugin {
   }
 }
 
+/**
+ * Inject the Cloudflare beacon into the hosted build only.
+ *
+ * Opt-in via TC_ANALYTICS=1 (set by `pnpm deploy`). A self-hosted instance
+ * must never phone home: it runs on investigation networks that may be
+ * air-gapped, and an IR tool that fetches a third-party script on every page
+ * load is both a privacy problem and an availability one.
+ */
 function cloudflareAnalytics(): Plugin {
   return {
     name: 'cloudflare-analytics',
     transformIndexHtml(html, ctx) {
       if (ctx.server) return html // skip in dev
+      if (process.env.TC_ANALYTICS !== '1') return html // self-hosted builds stay silent
       return html.replace(
         '</body>',
         `<!-- Cloudflare Web Analytics --><script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "beb9b5eaaaaf4808a367502ada8fd179"}'></script><!-- End Cloudflare Web Analytics -->\n</body>`
