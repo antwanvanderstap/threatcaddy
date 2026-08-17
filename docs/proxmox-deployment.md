@@ -104,13 +104,22 @@ cp .env.example .env
 Fill in, at minimum:
 
 ```bash
-# Generate the database password and the JWT signing pair
+# Database password
 openssl rand -base64 32                      # -> POSTGRES_PASSWORD
+
+# JWT signing pair
 openssl genpkey -algorithm Ed25519 -out private.pem
 openssl pkey -in private.pem -pubout -out public.pem
-awk 'NF {sub(/\r/, ""); printf "%s\\n",$0;}' private.pem   # -> JWT_PRIVATE_KEY
-awk 'NF {sub(/\r/, ""); printf "%s\\n",$0;}' public.pem    # -> JWT_PUBLIC_KEY
+
+# Append both keys quoted and multi-line, straight from the files
+{ printf 'JWT_PRIVATE_KEY="'; cat private.pem; printf '"\n'
+  printf 'JWT_PUBLIC_KEY="';  cat public.pem;  printf '"\n'; } >> .env
 ```
+
+The PEM newlines must survive into the container. Compose preserves them
+inside quotes; flattening the key to one line with literal `\n` escapes gets
+rejected by `jose.importPKCS8` as `asn1 encoding routines::too long` — and
+only on the first login, well after the server has started cleanly.
 
 `ALLOWED_ORIGINS` must match `TC_DOMAIN` exactly, scheme included — the server
 rejects browser requests from anywhere else.

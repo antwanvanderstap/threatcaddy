@@ -16,11 +16,31 @@ openssl genpkey -algorithm Ed25519 -out private.pem
 
 # Extract public key
 openssl pkey -in private.pem -pubout -out public.pem
+```
 
-# Convert to single-line format for environment variables
-# (replace newlines with literal \n)
-awk 'NF {sub(/\r/, ""); printf "%s\\n",$0;}' private.pem
-awk 'NF {sub(/\r/, ""); printf "%s\\n",$0;}' public.pem
+Put each key into `.env` as a **quoted, multi-line** value, newlines intact:
+
+```env
+JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEI...
+-----END PRIVATE KEY-----"
+```
+
+Docker Compose passes that through with its line breaks preserved, which is
+what the server needs: `jose.importPKCS8` parses a real PEM and does no
+unescaping of its own.
+
+> Do **not** flatten the key to one line with literal `\n` escapes. The
+> backslash-n sequences arrive verbatim, land inside the base64 body, and
+> `importPKCS8` rejects the result with
+> `asn1 encoding routines::too long`. The server starts normally and then
+> fails on the first login, which makes the cause easy to misread.
+
+Appending straight from the files avoids transcription mistakes:
+
+```bash
+{ printf 'JWT_PRIVATE_KEY="'; cat private.pem; printf '"\n'
+  printf 'JWT_PUBLIC_KEY="';  cat public.pem;  printf '"\n'; } >> .env
 ```
 
 ### Configure Environment
@@ -28,9 +48,13 @@ awk 'NF {sub(/\r/, ""); printf "%s\\n",$0;}' public.pem
 Create a `.env` file in the project root (same directory as `docker-compose.yml`):
 
 ```env
-# Required
-JWT_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEI...\n-----END PRIVATE KEY-----\n
-JWT_PUBLIC_KEY=-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA...\n-----END PUBLIC KEY-----\n
+# Required — quoted, newlines preserved (see above)
+JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEI...
+-----END PRIVATE KEY-----"
+JWT_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEA...
+-----END PUBLIC KEY-----"
 ALLOWED_ORIGINS=https://your-domain.com
 
 # Optional
