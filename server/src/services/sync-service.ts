@@ -18,7 +18,18 @@ const TABLE_MAP: Record<string, PgTable<any>> = {
   whiteboards: schema.whiteboards,
   standaloneIOCs: schema.standaloneIOCs,
   chatThreads: schema.chatThreads,
+  caseUpdates: schema.caseUpdates,
 };
+
+/**
+ * Client fields stored in `timestamp` columns. The client keeps epoch ms, but
+ * drizzle's timestamp mapper calls toISOString(), so a raw number would throw
+ * and the whole change would come back as a conflict.
+ */
+const TIMESTAMP_FIELDS = new Set([
+  'closedAt', 'completedAt', 'trashedAt', 'timestamp', 'timestampEnd',
+  'detectedAt', 'containedAt', 'eradicatedAt', 'recoveredAt',
+]);
 
 // Fields managed exclusively by the server — never accept from client
 const SERVER_MANAGED_FIELDS = new Set([
@@ -61,6 +72,15 @@ function stripServerFields(data: Record<string, unknown> | undefined): Record<st
     // Reject unsafe or oversized values
     if (!validateValue(value)) {
       logger.warn('Sync: rejected invalid field value', { key, type: typeof value });
+      continue;
+    }
+    if (TIMESTAMP_FIELDS.has(key) && (typeof value === 'number' || typeof value === 'string')) {
+      const date = new Date(value);
+      if (isNaN(date.getTime())) {
+        logger.warn('Sync: rejected invalid timestamp', { key });
+        continue;
+      }
+      clean[key] = date;
       continue;
     }
     clean[key] = value;

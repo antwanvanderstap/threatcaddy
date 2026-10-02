@@ -89,7 +89,7 @@ export class SyncEngine {
     const done = await dynamicDb.table('_syncMeta').get(META_KEY_INITIAL_PUSH_DONE);
     if (done?.value) return; // Already pushed local data once — skip
 
-    const FOLDER_SCOPED_TABLES = ['notes', 'tasks', 'timelineEvents', 'whiteboards', 'standaloneIOCs', 'chatThreads'];
+    const FOLDER_SCOPED_TABLES = ['notes', 'tasks', 'timelineEvents', 'whiteboards', 'standaloneIOCs', 'chatThreads', 'caseUpdates'];
     const GLOBAL_TABLES = ['tags', 'timelines'];
 
     try {
@@ -431,7 +431,7 @@ export class SyncEngine {
   // Push an entire folder and all its scoped content to the server.
   // Used when a folder was created locally before sync was active.
   async syncFolder(folderId: string) {
-    const FOLDER_SCOPED_TABLES = ['notes', 'tasks', 'timelineEvents', 'whiteboards', 'standaloneIOCs', 'chatThreads'];
+    const FOLDER_SCOPED_TABLES = ['notes', 'tasks', 'timelineEvents', 'whiteboards', 'standaloneIOCs', 'chatThreads', 'caseUpdates'];
 
     const changes: SyncChange[] = [];
 

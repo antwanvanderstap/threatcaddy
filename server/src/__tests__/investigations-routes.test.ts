@@ -61,6 +61,7 @@ vi.mock('../routes/admin/shared.js', async () => {
     whiteboards: { id: 'id', folderId: 'folder_id' },
     standaloneIOCs: { id: 'id', folderId: 'folder_id' },
     chatThreads: { id: 'id', folderId: 'folder_id' },
+    caseUpdates: { id: 'id', folderId: 'folder_id' },
     posts: { id: 'id', folderId: 'folder_id' },
     files: { id: 'id', folderId: 'folder_id', storagePath: 'storage_path', thumbnailPath: 'thumbnail_path' },
     notifications: { id: 'id', folderId: 'folder_id' },

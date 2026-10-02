@@ -148,6 +148,13 @@
       "when": 1772583137973,
       "tag": "0020_agentcaddy_llm_usage_and_classification",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1772583138973,
+      "tag": "0021_incident_fields_and_case_updates",
+      "breakpoints": true
     }
   ]
 }

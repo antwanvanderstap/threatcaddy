@@ -78,6 +78,7 @@ vi.mock('../db/schema.js', () => {
     whiteboards: makeTable('whiteboards'),
     standaloneIOCs: makeTable('standaloneIOCs'),
     chatThreads: makeTable('chatThreads'),
+    caseUpdates: makeTable('caseUpdates'),
     investigationMembers: makeTable('investigationMembers'),
   };
 });
@@ -128,6 +129,60 @@ describe('sync-service', () => {
         serverVersion: 1,
       });
       expect(mockInsert).toHaveBeenCalled();
+    });
+
+    it('converts epoch-ms incident timestamps to Dates before insert', async () => {
+      mockSelect.mockReturnValue(createSelectChain([]));
+      const insertChain = createInsertChain([{ id: 'folder-1', version: 1 }]);
+      mockInsert.mockReturnValue(insertChain);
+
+      const detectedAt = Date.UTC(2026, 9, 2, 12, 0, 0);
+      const results = await processPush([{
+        table: 'folders',
+        op: 'put',
+        entityId: 'folder-1',
+        data: { name: 'Incident', severity: 'high', detectedAt, closedAt: '2026-10-03T08:00:00.000Z', externalRefs: { connectwise: '213046' } },
+      }], 'user-1');
+
+      expect(results[0].status).toBe('accepted');
+      const values = insertChain.values.mock.calls[0][0];
+      expect(values.detectedAt).toBeInstanceOf(Date);
+      expect(values.detectedAt.getTime()).toBe(detectedAt);
+      expect(values.closedAt).toBeInstanceOf(Date);
+      expect(values.closedAt.toISOString()).toBe('2026-10-03T08:00:00.000Z');
+      expect(values.externalRefs).toEqual({ connectwise: '213046' });
+    });
+
+    it('drops an unparseable timestamp rather than failing the change', async () => {
+      mockSelect.mockReturnValue(createSelectChain([]));
+      const insertChain = createInsertChain([{ id: 'folder-1', version: 1 }]);
+      mockInsert.mockReturnValue(insertChain);
+
+      const results = await processPush([{
+        table: 'folders',
+        op: 'put',
+        entityId: 'folder-1',
+        data: { name: 'Incident', containedAt: 'not a date' },
+      }], 'user-1');
+
+      expect(results[0].status).toBe('accepted');
+      expect(insertChain.values.mock.calls[0][0]).not.toHaveProperty('containedAt');
+    });
+
+    it('accepts case log entries', async () => {
+      mockSelect.mockReturnValue(createSelectChain([]));
+      const insertChain = createInsertChain([{ id: 'cu-1', version: 1 }]);
+      mockInsert.mockReturnValue(insertChain);
+
+      const results = await processPush([{
+        table: 'caseUpdates',
+        op: 'put',
+        entityId: 'cu-1',
+        data: { folderId: 'folder-1', type: 'containment', body: 'Host isolated' },
+      }], 'user-1');
+
+      expect(results[0]).toMatchObject({ table: 'caseUpdates', status: 'accepted' });
+      expect(insertChain.values.mock.calls[0][0]).toMatchObject({ folderId: 'folder-1', type: 'containment', body: 'Host isolated' });
     });
 
     it('should update an existing entity when versions match', async () => {

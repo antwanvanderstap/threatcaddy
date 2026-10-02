@@ -135,6 +135,18 @@ export const folders = pgTable('folders', {
   closureResolution: text('closure_resolution'),
   closedReason: text('closed_reason'),
   closedAt: timestamp('closed_at', { withTimezone: true }),
+  // Incident fields — mirror the client Folder type. Absent/'none' severity
+  // means the investigation has not been triaged as an incident.
+  severity: text('severity', { enum: ['critical', 'high', 'medium', 'low', 'none'] }),
+  irPhase: text('ir_phase', { enum: ['triage', 'detection', 'containment', 'eradication', 'recovery', 'lessons-learned'] }),
+  detectedAt: timestamp('detected_at', { withTimezone: true }),
+  containedAt: timestamp('contained_at', { withTimezone: true }),
+  eradicatedAt: timestamp('eradicated_at', { withTimezone: true }),
+  recoveredAt: timestamp('recovered_at', { withTimezone: true }),
+  incidentCommander: text('incident_commander'),
+  // Record id in the external system that opened this case, keyed by system
+  // (e.g. { connectwise: '48219' }) — the dedupe key for scripted intake.
+  externalRefs: jsonb('external_refs').default({}),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
   updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
@@ -144,6 +156,7 @@ export const folders = pgTable('folders', {
 }, (t) => ({
   idxFoldersUpdatedAt: index('idx_folders_updated_at').on(t.updatedAt),
   idxFoldersCreatedBy: index('idx_folders_created_by').on(t.createdBy),
+  idxFoldersExternalRefs: index('idx_folders_external_refs').using('gin', t.externalRefs),
 }));
 
 export const tags = pgTable('tags', {
@@ -281,6 +294,34 @@ export const standaloneIOCs = pgTable('standalone_iocs', {
   idxStandaloneIOCsCreatedBy: index('idx_standalone_iocs_created_by').on(t.createdBy),
   idxStandaloneIOCsAssigneeId: index('idx_standalone_iocs_assignee_id').on(t.assigneeId),
   idxStandaloneIOCsFolderIdUpdatedAt: index('idx_standalone_iocs_folder_id_updated_at').on(t.folderId, t.updatedAt),
+}));
+
+/**
+ * Incident case log. Append-only in spirit: edits keep the superseded text in
+ * `revisions` (see the client CaseUpdate type), so the log stays auditable.
+ */
+export const caseUpdates = pgTable('case_updates', {
+  id: text('id').primaryKey(),
+  folderId: text('folder_id').notNull(),
+  type: text('type', { enum: ['status', 'finding', 'action', 'escalation', 'containment', 'handover'] }).notNull().default('status'),
+  body: text('body').notNull().default(''),
+  phase: text('phase'),
+  authorName: text('author_name'),
+  revisions: jsonb('revisions'),
+  linkedNoteIds: jsonb('linked_note_ids'),
+  linkedTaskIds: jsonb('linked_task_ids'),
+  linkedIOCIds: jsonb('linked_ioc_ids'),
+  linkedAssetIds: jsonb('linked_asset_ids'),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+  updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  version: integer('version').notNull().default(1),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+}, (t) => ({
+  idxCaseUpdatesFolderIdCreatedAt: index('idx_case_updates_folder_id_created_at').on(t.folderId, t.createdAt),
+  idxCaseUpdatesUpdatedAt: index('idx_case_updates_updated_at').on(t.updatedAt),
+  idxCaseUpdatesFolderIdUpdatedAt: index('idx_case_updates_folder_id_updated_at').on(t.folderId, t.updatedAt),
 }));
 
 export const chatThreads = pgTable('chat_threads', {

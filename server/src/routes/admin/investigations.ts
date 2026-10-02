@@ -5,7 +5,7 @@ import { unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   db, users, folders, investigationMembers, notes, tasks,
-  timelineEvents, whiteboards, standaloneIOCs, chatThreads, posts,
+  timelineEvents, whiteboards, standaloneIOCs, chatThreads, caseUpdates, posts,
   files, notifications,
   requireAdminAuth, logger, logAdminAction, getAdminId, FILE_STORAGE_PATH,
 } from './shared.js';
@@ -214,6 +214,8 @@ app.delete('/api/investigations/:id/content', requireAdminAuth, async (c) => {
     counts.standaloneIOCs = delIoc.length;
     const delChat = await tx.delete(chatThreads).where(eq(chatThreads.folderId, folderId)).returning({ id: chatThreads.id });
     counts.chatThreads = delChat.length;
+    const delCaseUpdates = await tx.delete(caseUpdates).where(eq(caseUpdates.folderId, folderId)).returning({ id: caseUpdates.id });
+    counts.caseUpdates = delCaseUpdates.length;
     const delPosts = await tx.delete(posts).where(eq(posts.folderId, folderId)).returning({ id: posts.id });
     counts.posts = delPosts.length;
     const delFiles = await tx.delete(files).where(eq(files.folderId, folderId)).returning({ id: files.id });

@@ -4,7 +4,7 @@ import { nanoid } from 'nanoid';
 import { requireAuth } from '../middleware/auth.js';
 import { checkInvestigationAccess } from '../middleware/access.js';
 import { db } from '../db/index.js';
-import { investigationMembers, folders, users, notes, tasks, timelineEvents, whiteboards, standaloneIOCs, chatThreads, posts, files, notifications } from '../db/schema.js';
+import { investigationMembers, folders, users, notes, tasks, timelineEvents, whiteboards, standaloneIOCs, chatThreads, caseUpdates, posts, files, notifications } from '../db/schema.js';
 import { createNotification } from '../services/notification-service.js';
 import { logActivity } from '../services/audit-service.js';
 import { revokeUserFolderAccess, broadcastToUser } from '../ws/handler.js';
@@ -396,6 +396,7 @@ app.delete('/:id', async (c) => {
     await tx.delete(whiteboards).where(eq(whiteboards.folderId, folderId));
     await tx.delete(standaloneIOCs).where(eq(standaloneIOCs.folderId, folderId));
     await tx.delete(chatThreads).where(eq(chatThreads.folderId, folderId));
+    await tx.delete(caseUpdates).where(eq(caseUpdates.folderId, folderId));
     await tx.delete(posts).where(eq(posts.folderId, folderId));
     await tx.delete(files).where(eq(files.folderId, folderId));
     await tx.delete(notifications).where(eq(notifications.folderId, folderId));

@@ -18,15 +18,30 @@
  *   ],
  *   "investigationId": "abc123",  // optional — add to existing investigation
  *   "tags": ["phishing"],         // optional — tags for the investigation
- *   "triggerAgents": true          // optional — auto-start agents (default: true)
+ *   "triggerAgents": true,         // optional — auto-start agents (default: true)
+ *   "externalRef": {               // optional — dedupe key: a second ingest with the
+ *     "system": "connectwise",     //   same system+id appends to that investigation
+ *     "id": "213046"               //   instead of opening a new one
+ *   },
+ *   "detectedAt": "2026-10-02T…",  // optional — incident clock start (ISO or epoch ms; default: now)
+ *   "caseUpdate": {                // optional — append an entry to the case log
+ *     "type": "status",            //   status/finding/action/escalation/containment/handover
+ *     "body": "Ticket moved to In Progress"
+ *   },
+ *   "alertNote": false             // optional — skip the alert note, IOCs and agents
+ *                                  //   (default: true), e.g. for a status-only update
  * }
+ *
+ * New investigations are created as incidents (severity set, phase `triage`)
+ * and shared as `editor` with every active admin and analyst — membership is
+ * the only access path, so an unshared investigation would be invisible.
  */
 
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import { db } from '../db/index.js';
-import { folders, notes, standaloneIOCs, botConfigs } from '../db/schema.js';
-import { eq, and } from 'drizzle-orm';
+import { folders, notes, standaloneIOCs, botConfigs, caseUpdates, investigationMembers, users } from '../db/schema.js';
+import { eq, and, inArray, isNull, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger.js';
 import { timingSafeEqual, createHmac } from 'node:crypto';
 
@@ -100,9 +115,23 @@ interface IngestPayload {
   investigationId?: string;
   tags?: string[];
   triggerAgents?: boolean;
+  externalRef?: { system: string; id: string };
+  detectedAt?: string | number;
+  caseUpdate?: { type?: string; body: string };
+  alertNote?: boolean;
 }
 
 const VALID_SEVERITIES = new Set(['low', 'medium', 'high', 'critical']);
+const VALID_CASE_UPDATE_TYPES = new Set(['status', 'finding', 'action', 'escalation', 'containment', 'handover']);
+const MAX_EXTERNAL_REF_LEN = 100;
+const MAX_CASE_UPDATE_LEN = 20_000;
+
+/** Parse an ISO string or epoch-ms number; undefined when absent or invalid. */
+function parseTimestamp(v: unknown): Date | undefined {
+  if (typeof v !== 'string' && typeof v !== 'number') return undefined;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? undefined : d;
+}
 const MAX_TITLE_LEN = 200;
 const MAX_SOURCE_LEN = 50;
 const MAX_IOC_VALUE_LEN = 500;
@@ -134,31 +163,110 @@ app.post('/ingest', async (c) => {
   const description = sanitizeStr(body.description, 5000);
   const tags = Array.isArray(body.tags) ? body.tags.filter((t): t is string => typeof t === 'string' && t.length < 100).slice(0, 20) : [];
 
+  let externalRef: { system: string; id: string } | undefined;
+  if (body.externalRef !== undefined) {
+    const system = sanitizeStr(body.externalRef?.system, MAX_SOURCE_LEN);
+    const id = sanitizeStr(body.externalRef?.id, MAX_EXTERNAL_REF_LEN);
+    if (!system || !id) {
+      return c.json({ error: 'externalRef requires string system (max 50) and id (max 100)' }, 400);
+    }
+    externalRef = { system, id };
+  }
+
+  let caseUpdate: { type: string; body: string } | undefined;
+  if (body.caseUpdate !== undefined) {
+    const updateBody = typeof body.caseUpdate?.body === 'string' ? body.caseUpdate.body.trim().substring(0, MAX_CASE_UPDATE_LEN) : '';
+    if (!updateBody) return c.json({ error: 'caseUpdate.body (string) is required' }, 400);
+    const type = String(body.caseUpdate.type || 'status');
+    if (!VALID_CASE_UPDATE_TYPES.has(type)) return c.json({ error: `caseUpdate.type must be one of ${[...VALID_CASE_UPDATE_TYPES].join(', ')}` }, 400);
+    caseUpdate = { type, body: updateBody };
+  }
+
   const now = new Date();
   let folderId = body.investigationId;
   let created = false;
+  let phase: string | null = null;
 
   // Find or create investigation
   if (folderId) {
     if (typeof folderId !== 'string') return c.json({ error: 'investigationId must be a string' }, 400);
-    const existing = await db.select({ id: folders.id }).from(folders).where(eq(folders.id, folderId)).limit(1);
+    const existing = await db.select({ id: folders.id, irPhase: folders.irPhase }).from(folders).where(eq(folders.id, folderId)).limit(1);
     if (existing.length === 0) {
       return c.json({ error: `Investigation not found` }, 404);
     }
+    phase = existing[0].irPhase ?? null;
   } else {
-    folderId = nanoid();
-    const severityIcon = severity === 'critical' ? '🚨' : severity === 'high' ? '⚠️' : severity === 'medium' ? '🔶' : '📋';
-    await db.insert(folders).values({
-      id: folderId,
-      name: `${severityIcon} ${title}`.substring(0, 200),
-      description: description || `Auto-created from ${source} alert`,
-      status: 'active',
-      tags: JSON.stringify([...tags, `source:${source}`, 'auto-ingested']),
+    if (externalRef) {
+      const existing = await db.select({ id: folders.id, irPhase: folders.irPhase })
+        .from(folders)
+        .where(and(
+          sql`${folders.externalRefs} ->> ${externalRef.system} = ${externalRef.id}`,
+          isNull(folders.deletedAt),
+        ))
+        .limit(1);
+      if (existing.length > 0) {
+        folderId = existing[0].id;
+        phase = existing[0].irPhase ?? null;
+      }
+    }
+
+    if (!folderId) {
+      folderId = nanoid();
+      phase = 'triage';
+      const severityIcon = severity === 'critical' ? '🚨' : severity === 'high' ? '⚠️' : severity === 'medium' ? '🔶' : '📋';
+      await db.insert(folders).values({
+        id: folderId,
+        name: `${severityIcon} ${title}`.substring(0, 200),
+        description: description || `Auto-created from ${source} alert`,
+        status: 'active',
+        tags: [...tags, `source:${source}`, 'auto-ingested'],
+        severity,
+        irPhase: 'triage',
+        detectedAt: parseTimestamp(body.detectedAt) ?? now,
+        externalRefs: externalRef ? { [externalRef.system]: externalRef.id } : {},
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      const team = await db.select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.active, true), inArray(users.role, ['admin', 'analyst'])));
+      if (team.length > 0) {
+        await db.insert(investigationMembers)
+          .values(team.map(u => ({ id: nanoid(), folderId: folderId!, userId: u.id, role: 'editor' as const, joinedAt: now })))
+          .onConflictDoNothing();
+      }
+
+      created = true;
+      logger.info('Webhook ingest: created investigation', { folderId, source, title, externalRef, members: team.length });
+    }
+  }
+
+  let caseUpdateId: string | undefined;
+  if (caseUpdate) {
+    caseUpdateId = nanoid();
+    await db.insert(caseUpdates).values({
+      id: caseUpdateId,
+      folderId,
+      type: caseUpdate.type as 'status',
+      body: caseUpdate.body,
+      phase,
+      authorName: source,
       createdAt: now,
       updatedAt: now,
     });
-    created = true;
-    logger.info('Webhook ingest: created investigation', { folderId, source, title });
+  }
+
+  if (body.alertNote === false) {
+    return c.json({
+      ok: true,
+      investigationId: folderId,
+      created,
+      caseUpdateId,
+      iocs: 0,
+      agentsTriggered: 0,
+      message: created ? 'Investigation created.' : 'Case log updated.',
+    });
   }
 
   // Create alert note
@@ -178,7 +286,7 @@ app.post('/ingest', async (c) => {
     folderId,
     title: `[${source.toUpperCase()}] ${title}`.substring(0, 200),
     content: noteContent,
-    tags: JSON.stringify(['alert', `source:${source}`, `severity:${severity}`]),
+    tags: ['alert', `source:${source}`, `severity:${severity}`],
     pinned: severity === 'critical' || severity === 'high',
     trashed: false,
     archived: false,
@@ -200,7 +308,7 @@ app.post('/ingest', async (c) => {
         value: sanitizeStr(ioc.value, MAX_IOC_VALUE_LEN),
         confidence: (VALID_CONFIDENCES.has(ioc.confidence || '') ? ioc.confidence : 'medium') as 'low' | 'medium' | 'high' | 'confirmed',
         analystNotes: `Auto-extracted from ${source} alert`,
-        tags: JSON.stringify(['auto-ingested', `source:${source}`]),
+        tags: ['auto-ingested', `source:${source}`],
         iocStatus: 'new',
         trashed: false,
         archived: false,
@@ -257,6 +365,7 @@ app.post('/ingest', async (c) => {
     investigationId: folderId,
     created,
     noteId,
+    caseUpdateId,
     iocs: iocCount,
     agentsTriggered,
     message: created

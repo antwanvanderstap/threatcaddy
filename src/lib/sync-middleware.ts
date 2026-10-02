@@ -5,7 +5,7 @@ import { syncEngine } from './sync-engine';
 const SYNCED_TABLES = [
   'notes', 'tasks', 'folders', 'tags',
   'timelineEvents', 'timelines', 'whiteboards',
-  'standaloneIOCs', 'chatThreads',
+  'standaloneIOCs', 'chatThreads', 'caseUpdates',
 ];
 
 // Folder IDs marked as local-only (skip sync)

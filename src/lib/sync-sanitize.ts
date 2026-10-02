@@ -13,6 +13,7 @@ import {
   sanitizeWhiteboard,
   sanitizeStandaloneIOC,
   sanitizeChatThread,
+  sanitizeCaseUpdate,
 } from './export';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -28,10 +29,14 @@ const TABLE_SANITIZERS: Record<string, Sanitizer> = {
   whiteboards: sanitizeWhiteboard,
   standaloneIOCs: sanitizeStandaloneIOC,
   chatThreads: sanitizeChatThread,
+  caseUpdates: sanitizeCaseUpdate,
 };
 
 /** Timestamp fields the server may send as ISO strings instead of ms. */
-const TIMESTAMP_FIELDS = ['createdAt', 'updatedAt', 'trashedAt', 'completedAt', 'closedAt', 'timestamp', 'timestampEnd'];
+const TIMESTAMP_FIELDS = [
+  'createdAt', 'updatedAt', 'trashedAt', 'completedAt', 'closedAt', 'timestamp', 'timestampEnd',
+  'detectedAt', 'containedAt', 'eradicatedAt', 'recoveredAt',
+];
 
 /**
  * Convert ISO timestamp strings to milliseconds so the sanitizers' num()

@@ -63,6 +63,8 @@ export function useServerSync(auth: AuthState, reloadFns: ReloadFns, onFolderInv
           if (tables.has('chatThreads')) reloadFns.chats();
           if (tables.has('folders')) reloadFns.folders();
           if (tables.has('tags')) reloadFns.tags();
+          // Case logs are loaded per investigation by useCaseUpdates, not held here
+          if (tables.has('caseUpdates')) window.dispatchEvent(new CustomEvent('tc-case-updates-changed'));
           reloadFns.onSyncPullComplete?.();
         });
       });

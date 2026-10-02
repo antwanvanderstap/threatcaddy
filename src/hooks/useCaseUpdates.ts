@@ -33,6 +33,12 @@ export function useCaseUpdates(folderId?: string) {
 
   useEffect(() => { load(); }, [load]);
 
+  // Entries pulled from the team server (e.g. scripted intake) land via sync
+  useEffect(() => {
+    window.addEventListener('tc-case-updates-changed', load);
+    return () => window.removeEventListener('tc-case-updates-changed', load);
+  }, [load]);
+
   const addUpdate = useCallback(async (input: {
     type: CaseUpdateType;
     body: string;
