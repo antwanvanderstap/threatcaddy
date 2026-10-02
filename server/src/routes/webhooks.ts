@@ -46,6 +46,12 @@
  *   [{ investigationId, ref, status, severity, irPhase }]. Lets a status-sync
  *   script find what to poll without keeping its own mapping.
  *
+ * GET /api/webhooks/case-updates?since=<ISO|ms>[&limit=500]
+ *   Case-log entries written by people (createdBy set — script entries posted
+ *   through ingest have none) that were created or edited after `since`,
+ *   oldest first, with author and the investigation's external refs. Backs
+ *   the case-log -> ConnectWise time-entry sync; `nextSince` is the cursor.
+ *
  * New investigations are created as incidents (severity set, phase `triage`)
  * and shared as `editor` with every active admin and analyst — membership is
  * the only access path, so an unshared investigation would be invisible.
@@ -55,7 +61,7 @@ import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import { db } from '../db/index.js';
 import { folders, notes, standaloneIOCs, botConfigs, caseUpdates, investigationMembers, users } from '../db/schema.js';
-import { eq, and, inArray, isNull, sql } from 'drizzle-orm';
+import { eq, and, gt, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger.js';
 import { timingSafeEqual, createHmac } from 'node:crypto';
 
@@ -450,6 +456,41 @@ app.get('/external-refs', async (c) => {
     .limit(5000);
 
   return c.json({ system, count: rows.length, items: rows });
+});
+
+app.get('/case-updates', async (c) => {
+  const since = parseTimestamp(c.req.query('since')) ?? new Date(0);
+  const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '500', 10) || 500, 1), 1000);
+
+  const rows = await db.select({
+    id: caseUpdates.id,
+    investigationId: caseUpdates.folderId,
+    type: caseUpdates.type,
+    body: caseUpdates.body,
+    createdAt: caseUpdates.createdAt,
+    updatedAt: caseUpdates.updatedAt,
+    deletedAt: caseUpdates.deletedAt,
+    authorName: caseUpdates.authorName,
+    authorEmail: users.email,
+    authorDisplayName: users.displayName,
+    investigationName: folders.name,
+    investigationStatus: folders.status,
+    externalRefs: folders.externalRefs,
+  })
+    .from(caseUpdates)
+    .innerJoin(folders, eq(folders.id, caseUpdates.folderId))
+    .leftJoin(users, eq(users.id, caseUpdates.createdBy))
+    .where(and(gt(caseUpdates.updatedAt, since), isNotNull(caseUpdates.createdBy)))
+    .orderBy(caseUpdates.updatedAt, caseUpdates.id)
+    .limit(limit);
+
+  const last = rows[rows.length - 1];
+  return c.json({
+    count: rows.length,
+    items: rows,
+    nextSince: last ? last.updatedAt.toISOString() : since.toISOString(),
+    more: rows.length === limit,
+  });
 });
 
 export default app;
