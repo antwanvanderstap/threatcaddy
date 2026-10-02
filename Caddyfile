@@ -1,0 +1,90 @@
+# ThreatCaddy self-hosted reverse proxy.
+#
+# Serves the built SPA and fronts the API on one origin, so the client can be
+# pointed at plain `https://your-domain` with no CORS exception and no port
+# numbers. Every value comes from the environment — see .env.example.
+
+{
+	# ACME registration address. Optional, but it is where the CA sends expiry
+	# warnings if automatic renewal ever stops working.
+	email {$TC_TLS_EMAIL}
+
+	# Which ACME directory to use. Point this at Let's Encrypt *staging* for a
+	# first deployment: production allows only a handful of failed validations
+	# per hostname per hour, and a misconfigured port forward burns through
+	# them before you have found the problem. Staging certificates are
+	# untrusted by browsers but prove the whole path works. See .env.example.
+	acme_ca {$TC_ACME_CA:https://acme-v02.api.letsencrypt.org/directory}
+}
+
+# ── Application ──────────────────────────────────────────────────────
+{$TC_DOMAIN} {
+	tls {
+		# How certificates are obtained, selected by TC_TLS_MODE:
+		#
+		#   dns-ionos   ACME DNS-01 via IONOS. No inbound traffic needed, and
+		#               the certificate is publicly trusted.
+		#   internal    Caddy's own CA. No dependencies; each client must
+		#               trust the root once.
+		#   acme-http   Classic ACME HTTP-01. Needs 80/443 reachable.
+		#
+		# Env substitution happens before parsing, so this resolves to a
+		# literal path. An unknown mode fails loudly at startup rather than
+		# silently falling back to something less safe.
+		import /etc/caddy/tls-mode/{$TC_TLS_MODE:internal}.conf
+	}
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+	}
+
+	# The API, the sync WebSocket and the health probe all live on the app
+	# port. reverse_proxy performs the WebSocket upgrade on its own, so /ws
+	# needs no special handling beyond being routed here.
+	@api path /api/* /ws /health
+	handle @api {
+		reverse_proxy server:3001 {
+			# Backup uploads run to 100MB. The default read timeout would cut
+			# a slow one off part-way through.
+			transport http {
+				read_timeout 300s
+			}
+		}
+	}
+
+	# Everything else is the SPA. An unknown path must fall through to
+	# index.html rather than 404 — the client owns its own routing, so a
+	# deep link into an investigation is not a missing file.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# ── Admin panel ──────────────────────────────────────────────────────
+#
+# Creates the first admin user and exposes audit data, so it is refused
+# outside the allowed networks before the request reaches the app at all.
+# Widen TC_ADMIN_ALLOW_IPS only as far as you actually need.
+{$TC_ADMIN_DOMAIN} {
+	tls {
+		import /etc/caddy/tls-mode/{$TC_TLS_MODE:internal}.conf
+	}
+
+	@allowed remote_ip {$TC_ADMIN_ALLOW_IPS:private_ranges}
+	handle @allowed {
+		reverse_proxy server:3002
+	}
+
+	# Deliberately a 404 rather than a 403: an unauthorised scanner learns
+	# nothing about whether an admin panel exists here.
+	handle {
+		respond "Not found" 404
+	}
+}

@@ -16,11 +16,31 @@ openssl genpkey -algorithm Ed25519 -out private.pem
 
 # Extract public key
 openssl pkey -in private.pem -pubout -out public.pem
+```
 
-# Convert to single-line format for environment variables
-# (replace newlines with literal \n)
-awk 'NF {sub(/\r/, ""); printf "%s\\n",$0;}' private.pem
-awk 'NF {sub(/\r/, ""); printf "%s\\n",$0;}' public.pem
+Put each key into `.env` as a **quoted, multi-line** value, newlines intact:
+
+```env
+JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEI...
+-----END PRIVATE KEY-----"
+```
+
+Docker Compose passes that through with its line breaks preserved, which is
+what the server needs: `jose.importPKCS8` parses a real PEM and does no
+unescaping of its own.
+
+> Do **not** flatten the key to one line with literal `\n` escapes. The
+> backslash-n sequences arrive verbatim, land inside the base64 body, and
+> `importPKCS8` rejects the result with
+> `asn1 encoding routines::too long`. The server starts normally and then
+> fails on the first login, which makes the cause easy to misread.
+
+Appending straight from the files avoids transcription mistakes:
+
+```bash
+{ printf 'JWT_PRIVATE_KEY="'; cat private.pem; printf '"\n'
+  printf 'JWT_PUBLIC_KEY="';  cat public.pem;  printf '"\n'; } >> .env
 ```
 
 ### Configure Environment
@@ -28,9 +48,13 @@ awk 'NF {sub(/\r/, ""); printf "%s\\n",$0;}' public.pem
 Create a `.env` file in the project root (same directory as `docker-compose.yml`):
 
 ```env
-# Required
-JWT_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEI...\n-----END PRIVATE KEY-----\n
-JWT_PUBLIC_KEY=-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA...\n-----END PUBLIC KEY-----\n
+# Required — quoted, newlines preserved (see above)
+JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEI...
+-----END PRIVATE KEY-----"
+JWT_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEA...
+-----END PUBLIC KEY-----"
 ALLOWED_ORIGINS=https://your-domain.com
 
 # Optional
@@ -141,8 +165,8 @@ The server Dockerfile (`server/Dockerfile`) uses a multi-stage build:
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `JWT_PRIVATE_KEY` | Ed25519 private key in PEM format (single-line, `\n`-escaped) | `-----BEGIN PRIVATE KEY-----\nMC4C...` |
-| `JWT_PUBLIC_KEY` | Corresponding Ed25519 public key in PEM format | `-----BEGIN PUBLIC KEY-----\nMCow...` |
+| `JWT_PRIVATE_KEY` | Ed25519 private key in PEM format. Quoted, newlines preserved — **not** `\n`-escaped | `"-----BEGIN PRIVATE KEY-----`<br>`MC4C...`<br>`-----END PRIVATE KEY-----"` |
+| `JWT_PUBLIC_KEY` | Corresponding Ed25519 public key, same quoted multi-line form | `"-----BEGIN PUBLIC KEY-----`<br>`MCow...`<br>`-----END PUBLIC KEY-----"` |
 | `ALLOWED_ORIGINS` | Comma-separated list of allowed CORS origins. **Must be set in production.** | `https://your-domain.com` |
 
 ### Server Configuration
@@ -357,12 +381,18 @@ ALLOWED_ORIGINS=https://your-domain.com,https://app.your-domain.com
 
 The default Docker Compose uses `tc:tc` for PostgreSQL credentials. In production:
 
-1. Change the database password:
+1. Change the database password — generate it URL-safe with
+   `openssl rand -hex 32`:
    ```yaml
    db:
      environment:
        POSTGRES_PASSWORD: a-strong-random-password
    ```
+
+   > Avoid `openssl rand -base64`. The password is interpolated into
+   > `DATABASE_URL`, and base64 emits `/`, `+` and `=`. A `/` terminates the
+   > URL authority section, so the server exits immediately with
+   > `ERR_INVALID_URL` and never reaches the database.
 
 2. Update `DATABASE_URL`:
    ```yaml
