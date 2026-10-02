@@ -23,6 +23,10 @@
  *     "system": "connectwise",     //   same system+id appends to that investigation
  *     "id": "213046"               //   instead of opening a new one
  *   },
+ *   "externalRefs": {              // optional — several refs at once (merged with
+ *     "stellar": "109878",         //   externalRef). Matches an investigation holding
+ *     "connectwise": "213046"      //   ANY of them; refs it lacks are added, so a ticket
+ *   },                             //   naming a Stellar case links the two
  *   "detectedAt": "2026-10-02T…",  // optional — incident clock start (ISO or epoch ms; default: now)
  *   "caseUpdate": {                // optional — append an entry to the case log
  *     "type": "status",            //   status/finding/action/escalation/containment/handover
@@ -31,6 +35,16 @@
  *   "alertNote": false             // optional — skip the alert note, IOCs and agents
  *                                  //   (default: true), e.g. for a status-only update
  * }
+ *
+ * Response `status` is `created`, `merged` (matched by ref, new refs added) or
+ * `exists` (matched by ref, nothing new). `exists` writes no alert note, IOCs or
+ * agent runs, so a poller can resend overlapping windows without duplicating;
+ * an explicit caseUpdate is still appended.
+ *
+ * GET /api/webhooks/external-refs?system=connectwise[&all=1]
+ *   Investigations carrying a ref for `system` (active only unless all=1):
+ *   [{ investigationId, ref, status, severity, irPhase }]. Lets a status-sync
+ *   script find what to poll without keeping its own mapping.
  *
  * New investigations are created as incidents (severity set, phase `triage`)
  * and shared as `editor` with every active admin and analyst — membership is
@@ -116,6 +130,7 @@ interface IngestPayload {
   tags?: string[];
   triggerAgents?: boolean;
   externalRef?: { system: string; id: string };
+  externalRefs?: Record<string, string>;
   detectedAt?: string | number;
   caseUpdate?: { type?: string; body: string };
   alertNote?: boolean;
@@ -125,6 +140,7 @@ const VALID_SEVERITIES = new Set(['low', 'medium', 'high', 'critical']);
 const VALID_CASE_UPDATE_TYPES = new Set(['status', 'finding', 'action', 'escalation', 'containment', 'handover']);
 const MAX_EXTERNAL_REF_LEN = 100;
 const MAX_CASE_UPDATE_LEN = 20_000;
+const MAX_EXTERNAL_REFS = 10;
 
 /** Parse an ISO string or epoch-ms number; undefined when absent or invalid. */
 function parseTimestamp(v: unknown): Date | undefined {
@@ -163,15 +179,29 @@ app.post('/ingest', async (c) => {
   const description = sanitizeStr(body.description, 5000);
   const tags = Array.isArray(body.tags) ? body.tags.filter((t): t is string => typeof t === 'string' && t.length < 100).slice(0, 20) : [];
 
-  let externalRef: { system: string; id: string } | undefined;
+  const refs: Record<string, string> = {};
   if (body.externalRef !== undefined) {
     const system = sanitizeStr(body.externalRef?.system, MAX_SOURCE_LEN);
     const id = sanitizeStr(body.externalRef?.id, MAX_EXTERNAL_REF_LEN);
     if (!system || !id) {
       return c.json({ error: 'externalRef requires string system (max 50) and id (max 100)' }, 400);
     }
-    externalRef = { system, id };
+    refs[system] = id;
   }
+  if (body.externalRefs !== undefined) {
+    if (!body.externalRefs || typeof body.externalRefs !== 'object' || Array.isArray(body.externalRefs)) {
+      return c.json({ error: 'externalRefs must be an object of system -> id' }, 400);
+    }
+    const entries = Object.entries(body.externalRefs);
+    if (entries.length > MAX_EXTERNAL_REFS) return c.json({ error: `externalRefs allows at most ${MAX_EXTERNAL_REFS} entries` }, 400);
+    for (const [rawSystem, rawId] of entries) {
+      const system = sanitizeStr(rawSystem, MAX_SOURCE_LEN);
+      const id = sanitizeStr(typeof rawId === 'number' ? String(rawId) : rawId, MAX_EXTERNAL_REF_LEN);
+      if (!system || !id) return c.json({ error: 'externalRefs entries need a system (max 50) and string id (max 100)' }, 400);
+      refs[system] = id;
+    }
+  }
+  const refEntries = Object.entries(refs);
 
   let caseUpdate: { type: string; body: string } | undefined;
   if (body.caseUpdate !== undefined) {
@@ -185,6 +215,7 @@ app.post('/ingest', async (c) => {
   const now = new Date();
   let folderId = body.investigationId;
   let created = false;
+  let status: 'created' | 'merged' | 'exists' | 'appended' = 'appended';
   let phase: string | null = null;
 
   // Find or create investigation
@@ -196,17 +227,36 @@ app.post('/ingest', async (c) => {
     }
     phase = existing[0].irPhase ?? null;
   } else {
-    if (externalRef) {
-      const existing = await db.select({ id: folders.id, irPhase: folders.irPhase })
+    if (refEntries.length > 0) {
+      const anyRef = sql.join(refEntries.map(([system, id]) => sql`${folders.externalRefs} ->> ${system} = ${id}`), sql` OR `);
+      const existing = await db.select({ id: folders.id, irPhase: folders.irPhase, externalRefs: folders.externalRefs })
         .from(folders)
-        .where(and(
-          sql`${folders.externalRefs} ->> ${externalRef.system} = ${externalRef.id}`,
-          isNull(folders.deletedAt),
-        ))
+        .where(and(sql`(${anyRef})`, isNull(folders.deletedAt)))
+        .orderBy(folders.createdAt)
         .limit(1);
       if (existing.length > 0) {
         folderId = existing[0].id;
         phase = existing[0].irPhase ?? null;
+        const have = (existing[0].externalRefs ?? {}) as Record<string, string>;
+        // Only fill systems the investigation has no ref for: an existing ref is
+        // never overwritten, since other tooling already keys off it.
+        const missing = Object.fromEntries(refEntries.filter(([system]) => have[system] === undefined));
+        const clashes = refEntries.filter(([system, id]) => have[system] !== undefined && have[system] !== id);
+        if (clashes.length > 0) {
+          logger.warn('Webhook ingest: ref already set to a different id; kept existing', { folderId, clashes, have });
+        }
+        if (Object.keys(missing).length > 0) {
+          await db.update(folders)
+            .set({
+              externalRefs: sql`coalesce(${folders.externalRefs}, '{}'::jsonb) || ${JSON.stringify(missing)}::jsonb`,
+              version: sql`${folders.version} + 1`,
+              updatedAt: now,
+            })
+            .where(eq(folders.id, folderId));
+          status = 'merged';
+        } else {
+          status = 'exists';
+        }
       }
     }
 
@@ -223,7 +273,7 @@ app.post('/ingest', async (c) => {
         severity,
         irPhase: 'triage',
         detectedAt: parseTimestamp(body.detectedAt) ?? now,
-        externalRefs: externalRef ? { [externalRef.system]: externalRef.id } : {},
+        externalRefs: refs,
         createdAt: now,
         updatedAt: now,
       });
@@ -238,7 +288,8 @@ app.post('/ingest', async (c) => {
       }
 
       created = true;
-      logger.info('Webhook ingest: created investigation', { folderId, source, title, externalRef, members: team.length });
+      status = 'created';
+      logger.info('Webhook ingest: created investigation', { folderId, source, title, refs, members: team.length });
     }
   }
 
@@ -257,15 +308,18 @@ app.post('/ingest', async (c) => {
     });
   }
 
-  if (body.alertNote === false) {
+  if (body.alertNote === false || status === 'exists') {
     return c.json({
       ok: true,
       investigationId: folderId,
       created,
+      status,
       caseUpdateId,
       iocs: 0,
       agentsTriggered: 0,
-      message: created ? 'Investigation created.' : 'Case log updated.',
+      message: status === 'exists'
+        ? (caseUpdateId ? 'Already ingested; case log updated.' : 'Already ingested; nothing new.')
+        : created ? 'Investigation created.' : 'Case log updated.',
     });
   }
 
@@ -364,6 +418,7 @@ app.post('/ingest', async (c) => {
     ok: true,
     investigationId: folderId,
     created,
+    status,
     noteId,
     caseUpdateId,
     iocs: iocCount,
@@ -372,6 +427,29 @@ app.post('/ingest', async (c) => {
       ? `Investigation created with ${iocCount} IOCs. ${agentsTriggered} agents triggered.`
       : `Alert added to existing investigation. ${iocCount} IOCs created. ${agentsTriggered} agents triggered.`,
   });
+});
+
+app.get('/external-refs', async (c) => {
+  const system = sanitizeStr(c.req.query('system'), MAX_SOURCE_LEN);
+  if (!system) return c.json({ error: 'system query parameter is required' }, 400);
+  const includeAll = c.req.query('all') === '1';
+
+  const rows = await db.select({
+    investigationId: folders.id,
+    ref: sql<string>`${folders.externalRefs} ->> ${system}`,
+    status: folders.status,
+    severity: folders.severity,
+    irPhase: folders.irPhase,
+  })
+    .from(folders)
+    .where(and(
+      sql`${folders.externalRefs} ? ${system}`,
+      isNull(folders.deletedAt),
+      ...(includeAll ? [] : [eq(folders.status, 'active')]),
+    ))
+    .limit(5000);
+
+  return c.json({ system, count: rows.length, items: rows });
 });
 
 export default app;
