@@ -3,10 +3,50 @@ import { useTranslation } from 'react-i18next';
 import { Plus, WifiOff, Briefcase, Search } from 'lucide-react';
 import type { Folder, InvestigationSummary, InvestigationDataMode, Note, Task, TimelineEvent, Whiteboard, StandaloneIOC, ChatThread } from '../../types';
 import { cn } from '../../lib/utils';
-import { InvestigationCard } from './InvestigationCard';
+import { InvestigationTable, type InvestigationRow } from './InvestigationTable';
 import { SupervisorSummary } from '../Agent/SupervisorSummary';
 
 const ZERO_COUNTS = { notes: 0, tasks: 0, iocs: 0, events: 0, whiteboards: 0, chats: 0 };
+
+type RowStatus = InvestigationRow['status'];
+
+function localRow(f: Folder, dataMode: 'local' | 'synced', entityCounts: InvestigationRow['entityCounts'], remote?: InvestigationSummary): InvestigationRow {
+  return {
+    folderId: f.id,
+    name: f.name,
+    status: (f.status || 'active') as RowStatus,
+    color: f.color,
+    icon: f.icon,
+    description: f.description,
+    clsLevel: f.clsLevel,
+    severity: f.severity,
+    irPhase: f.irPhase,
+    entityCounts,
+    memberCount: remote?.memberCount,
+    role: remote?.role,
+    dataMode,
+    updatedAt: f.updatedAt ?? f.createdAt,
+  };
+}
+
+function remoteRow(r: InvestigationSummary): InvestigationRow {
+  return {
+    folderId: r.folderId,
+    name: r.folder.name,
+    status: (r.folder.status || 'active') as RowStatus,
+    color: r.folder.color,
+    icon: r.folder.icon,
+    description: r.folder.description,
+    clsLevel: r.folder.clsLevel,
+    severity: r.folder.severity ?? undefined,
+    irPhase: r.folder.irPhase ?? undefined,
+    entityCounts: r.entityCounts,
+    memberCount: r.memberCount,
+    role: r.role,
+    dataMode: 'remote',
+    updatedAt: r.folder.updatedAt,
+  };
+}
 
 export interface InvestigationsHubProps {
   localFolders: Folder[];
@@ -30,23 +70,6 @@ export interface InvestigationsHubProps {
   allIOCs?: StandaloneIOC[];
   allChats?: ChatThread[];
   syncingFolderId?: string | null;
-}
-
-function SkeletonCard() {
-  return (
-    <div className="rounded-lg border border-border-subtle bg-bg-raised p-3 animate-pulse">
-      <div className="h-4 bg-bg-deep rounded w-3/4 mb-3" />
-      <div className="grid grid-cols-3 gap-1 mb-2.5">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="h-12 bg-bg-deep/50 rounded-md" />
-        ))}
-      </div>
-      <div className="flex gap-2">
-        <div className="h-4 bg-bg-deep rounded w-14" />
-        <div className="h-4 bg-bg-deep rounded w-10" />
-      </div>
-    </div>
-  );
 }
 
 function EmptyState({ message, showCreate, onCreate }: { message: string; showCreate?: boolean; onCreate?: () => void }) {
@@ -206,34 +229,16 @@ export function InvestigationsHub({
         {/* Section 1: My Investigations (purely local) */}
         <section className="mb-8">
           <SectionHeading title={t('hub.myInvestigations')} count={pureLocalFolders.length} />
-          {localLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <SkeletonCard />
-              <SkeletonCard />
-            </div>
-          ) : pureLocalFolders.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {pureLocalFolders.map((f) => (
-                <InvestigationCard
-                  key={f.id}
-                  folderId={f.id}
-                  name={f.name}
-                  status={(f.status || 'active') as 'active' | 'closed' | 'archived'}
-                  color={f.color}
-                  icon={f.icon}
-                  description={f.description}
-                  clsLevel={f.clsLevel}
-                  entityCounts={localCountsMap.get(f.id) ?? ZERO_COUNTS}
-                  dataMode="local"
-                  updatedAt={f.updatedAt ?? f.createdAt}
-                  onOpen={(id) => onOpenInvestigation(id, 'local')}
-                  onSettings={onEditInvestigation}
-                  onArchive={onArchiveInvestigation}
-                  onUnarchive={onUnarchiveInvestigation}
-                  onDelete={onDeleteInvestigation}
-                />
-              ))}
-            </div>
+          {localLoading || pureLocalFolders.length > 0 ? (
+            <InvestigationTable
+              rows={pureLocalFolders.map((f) => localRow(f, 'local', localCountsMap.get(f.id) ?? ZERO_COUNTS))}
+              loading={localLoading}
+              onOpen={onOpenInvestigation}
+              onSettings={onEditInvestigation}
+              onArchive={onArchiveInvestigation}
+              onUnarchive={onUnarchiveInvestigation}
+              onDelete={onDeleteInvestigation}
+            />
           ) : (
             <EmptyState
               message={t('hub.noLocal')}
@@ -247,67 +252,35 @@ export function InvestigationsHub({
         {archivedLocalFolders.length > 0 && (
           <section className="mb-8">
             <SectionHeading title={t('hub.archivedSection')} count={archivedLocalFolders.length} />
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {archivedLocalFolders.map((f) => (
-                <InvestigationCard
-                  key={f.id}
-                  folderId={f.id}
-                  name={f.name}
-                  status="archived"
-                  color={f.color}
-                  icon={f.icon}
-                  description={f.description}
-                  clsLevel={f.clsLevel}
-                  entityCounts={localCountsMap.get(f.id) ?? ZERO_COUNTS}
-                  dataMode="local"
-                  updatedAt={f.updatedAt ?? f.createdAt}
-                  onOpen={(id) => onOpenInvestigation(id, 'local')}
-                  onSettings={onEditInvestigation ? (id) => onEditInvestigation(id) : undefined}
-                  onUnarchive={onUnarchiveInvestigation}
-                  onDelete={onDeleteInvestigation}
-                />
-              ))}
-            </div>
+            <InvestigationTable
+              rows={archivedLocalFolders.map((f) => localRow(f, 'local', localCountsMap.get(f.id) ?? ZERO_COUNTS))}
+              onOpen={onOpenInvestigation}
+              onSettings={onEditInvestigation}
+              onUnarchive={onUnarchiveInvestigation}
+              onDelete={onDeleteInvestigation}
+            />
           </section>
         )}
 
         {/* Section 2: Synced Investigations */}
         <section className="mb-8">
           <SectionHeading title={t('hub.syncedInvestigations')} count={syncedLocalFolders.length} />
-          {localLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <SkeletonCard />
-            </div>
-          ) : syncedLocalFolders.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {syncedLocalFolders.map((f) => {
+          {localLoading || syncedLocalFolders.length > 0 ? (
+            <InvestigationTable
+              rows={syncedLocalFolders.map((f) => {
                 const remote = remoteByFolderId.get(f.id);
-                return (
-                  <InvestigationCard
-                    key={f.id}
-                    folderId={f.id}
-                    name={f.name}
-                    status={(f.status || 'active') as 'active' | 'closed' | 'archived'}
-                    color={f.color}
-                    icon={f.icon}
-                    description={f.description}
-                    clsLevel={f.clsLevel}
-                    entityCounts={remote?.entityCounts ?? localCountsMap.get(f.id) ?? ZERO_COUNTS}
-                    memberCount={remote?.memberCount}
-                    role={remote?.role}
-                    dataMode="synced"
-                    updatedAt={f.updatedAt ?? f.createdAt}
-                    onOpen={(id) => onOpenInvestigation(id, 'synced')}
-                    onUnsync={onUnsync}
-                    onSettings={onEditInvestigation}
-                    onArchive={onArchiveInvestigation}
-                    onUnarchive={onUnarchiveInvestigation}
-                    onDelete={onDeleteInvestigation}
-                    syncing={syncingFolderId === f.id}
-                  />
-                );
+                return localRow(f, 'synced', remote?.entityCounts ?? localCountsMap.get(f.id) ?? ZERO_COUNTS, remote);
               })}
-            </div>
+              loading={localLoading}
+              skeletonRows={1}
+              onOpen={onOpenInvestigation}
+              onUnsync={onUnsync}
+              onSettings={onEditInvestigation}
+              onArchive={onArchiveInvestigation}
+              onUnarchive={onUnarchiveInvestigation}
+              onDelete={onDeleteInvestigation}
+              syncingFolderId={syncingFolderId}
+            />
           ) : (
             <EmptyState message={t('hub.noSynced')} />
           )}
@@ -318,43 +291,20 @@ export function InvestigationsHub({
           <SectionHeading title={t('hub.sharedWithMe')} count={serverConnected ? remoteOnlyInvestigations.length : undefined} />
           {!serverConnected ? (
             <DisconnectedBanner />
-          ) : remoteLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <SkeletonCard />
-              <SkeletonCard />
-              <SkeletonCard />
-            </div>
-          ) : remoteOnlyInvestigations.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {remoteOnlyInvestigations.map((r) => (
-                <InvestigationCard
-                  key={r.folderId}
-                  folderId={r.folderId}
-                  name={r.folder.name}
-                  status={(r.folder.status || 'active') as 'active' | 'closed' | 'archived'}
-                  color={r.folder.color}
-                  icon={r.folder.icon}
-                  description={r.folder.description}
-                  clsLevel={r.folder.clsLevel}
-                  entityCounts={r.entityCounts}
-                  memberCount={r.memberCount}
-                  role={r.role}
-                  dataMode="remote"
-                  updatedAt={r.folder.updatedAt}
-                  onOpen={(id) => onOpenInvestigation(id, 'remote')}
-                  onSync={onSyncLocally}
-                  onSettings={onEditInvestigation}
-                  syncing={syncingFolderId === r.folderId}
-                />
-              ))}
-            </div>
+          ) : remoteLoading || remoteOnlyInvestigations.length > 0 ? (
+            <InvestigationTable
+              rows={remoteOnlyInvestigations.map(remoteRow)}
+              loading={remoteLoading}
+              skeletonRows={3}
+              onOpen={onOpenInvestigation}
+              onSync={onSyncLocally}
+              onSettings={onEditInvestigation}
+              syncingFolderId={syncingFolderId}
+            />
           ) : (
             <EmptyState message={t('hub.noShared')} />
           )}
         </section>
-
-
-
       </div>
     </div>
   );

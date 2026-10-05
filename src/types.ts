@@ -1483,6 +1483,8 @@ export interface InvestigationSummary {
     clsLevel?: string;
     papLevel?: string;
     tags?: string[];
+    severity?: IncidentSeverity | null;
+    irPhase?: IncidentPhase | null;
     createdAt: string;
     updatedAt: string;
   };

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { InvestigationsHub } from '../components/Investigations/InvestigationsHub';
-import { InvestigationCard } from '../components/Investigations/InvestigationCard';
+import { InvestigationTable, type InvestigationRow } from '../components/Investigations/InvestigationTable';
 import { CreateInvestigationModal } from '../components/Investigations/CreateInvestigationModal';
 import type { Folder, InvestigationSummary } from '../types';
 
@@ -170,155 +170,116 @@ describe('InvestigationsHub', () => {
   });
 });
 
-// ── InvestigationCard ─────────────────────────────────────────────────────────
+// ── InvestigationTable ────────────────────────────────────────────────────────
 
-describe('InvestigationCard', () => {
-  const defaultCardProps = {
-    folderId: 'card-1',
+describe('InvestigationTable', () => {
+  const baseRow: InvestigationRow = {
+    folderId: 'row-1',
     name: 'Op Thunder',
-    status: 'active' as const,
+    status: 'active',
     entityCounts: { notes: 5, tasks: 3, iocs: 2, events: 1, whiteboards: 0, chats: 0 },
-    dataMode: 'local' as const,
-    onOpen: vi.fn(),
+    dataMode: 'local',
   };
+
+  const renderTable = (row: Partial<InvestigationRow> = {}, props: Partial<React.ComponentProps<typeof InvestigationTable>> = {}) =>
+    render(<InvestigationTable rows={[{ ...baseRow, ...row }]} onOpen={vi.fn()} {...props} />);
 
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('renders name and status badge', () => {
-    render(<InvestigationCard {...defaultCardProps} />);
+  it('renders a table row with name and status', () => {
+    renderTable();
+    expect(screen.getByRole('table')).toBeInTheDocument();
     expect(screen.getByText('Op Thunder')).toBeInTheDocument();
     expect(screen.getByText('Active')).toBeInTheDocument();
   });
 
   it('renders entity counts', () => {
-    render(<InvestigationCard {...defaultCardProps} />);
+    renderTable();
     expect(screen.getByText('5')).toBeInTheDocument(); // notes
     expect(screen.getByText('3')).toBeInTheDocument(); // tasks
     expect(screen.getByText('2')).toBeInTheDocument(); // iocs
   });
 
-  it('shows data mode badge (Local/Synced/Remote)', () => {
-    const { rerender } = render(<InvestigationCard {...defaultCardProps} dataMode="local" />);
+  it('shows data mode badge (Local/Remote)', () => {
+    const { unmount } = renderTable({ dataMode: 'local' });
     expect(screen.getByText('Local')).toBeInTheDocument();
-
-    rerender(<InvestigationCard {...defaultCardProps} dataMode="remote" />);
+    unmount();
+    renderTable({ dataMode: 'remote' });
     expect(screen.getByText('Remote')).toBeInTheDocument();
   });
 
-  it('calls onOpen when clicked', () => {
+  it('shows severity and phase for incidents', () => {
+    renderTable({ severity: 'high', irPhase: 'containment' });
+    expect(screen.getByText('High')).toBeInTheDocument();
+    expect(screen.getByText('Containment')).toBeInTheDocument();
+  });
+
+  it('calls onOpen with folder id and data mode when a row is clicked', () => {
     const onOpen = vi.fn();
-    render(<InvestigationCard {...defaultCardProps} onOpen={onOpen} />);
-    // The card is a button — click it
+    renderTable({ dataMode: 'synced' }, { onOpen });
     fireEvent.click(screen.getByText('Op Thunder'));
-    expect(onOpen).toHaveBeenCalledWith('card-1');
+    expect(onOpen).toHaveBeenCalledWith('row-1', 'synced');
   });
 
-  it('shows context menu on three-dot button click', () => {
-    const onSettings = vi.fn();
-    render(
-      <InvestigationCard
-        {...defaultCardProps}
-        onSettings={onSettings}
-        onArchive={vi.fn()}
-        onDelete={vi.fn()}
-      />
-    );
-    // Find the three-dot menu button (MoreVertical icon with role="button")
-    const menuButton = screen.getByTitle('Actions');
-    fireEvent.click(menuButton);
-    expect(screen.getByText('Settings')).toBeInTheDocument();
-    expect(screen.getByText('Archive')).toBeInTheDocument();
-    expect(screen.getByText('Delete')).toBeInTheDocument();
-  });
-
-  it('context menu calls onSettings, onArchive, onDelete', () => {
+  it('context menu calls onSettings, onArchive, onDelete without opening the row', () => {
+    const onOpen = vi.fn();
     const onSettings = vi.fn();
     const onArchive = vi.fn();
     const onDelete = vi.fn();
-    render(
-      <InvestigationCard
-        {...defaultCardProps}
-        onSettings={onSettings}
-        onArchive={onArchive}
-        onDelete={onDelete}
-      />
-    );
-    // Open menu
+    renderTable({}, { onOpen, onSettings, onArchive, onDelete });
+
     fireEvent.click(screen.getByTitle('Actions'));
-
     fireEvent.click(screen.getByText('Settings'));
-    expect(onSettings).toHaveBeenCalledWith('card-1');
+    expect(onSettings).toHaveBeenCalledWith('row-1');
 
-    // Re-open menu (it closes after click)
     fireEvent.click(screen.getByTitle('Actions'));
     fireEvent.click(screen.getByText('Archive'));
-    expect(onArchive).toHaveBeenCalledWith('card-1');
+    expect(onArchive).toHaveBeenCalledWith('row-1');
 
     fireEvent.click(screen.getByTitle('Actions'));
     fireEvent.click(screen.getByText('Delete'));
-    expect(onDelete).toHaveBeenCalledWith('card-1');
+    expect(onDelete).toHaveBeenCalledWith('row-1');
+
+    expect(onOpen).not.toHaveBeenCalled();
   });
 
-  it('Sync button calls onSync for remote cards', () => {
+  it('Sync button calls onSync for remote rows', () => {
     const onSync = vi.fn();
-    render(
-      <InvestigationCard
-        {...defaultCardProps}
-        dataMode="remote"
-        onSync={onSync}
-      />
-    );
-    const syncBtn = screen.getByText('Sync');
-    fireEvent.click(syncBtn);
-    expect(onSync).toHaveBeenCalledWith('card-1');
+    renderTable({ dataMode: 'remote' }, { onSync });
+    fireEvent.click(screen.getByText('Sync'));
+    expect(onSync).toHaveBeenCalledWith('row-1');
   });
 
-  it('Unsync button calls onUnsync for synced cards', () => {
+  it('Unsync button calls onUnsync for synced rows', () => {
     const onUnsync = vi.fn();
-    render(
-      <InvestigationCard
-        {...defaultCardProps}
-        dataMode="synced"
-        onUnsync={onUnsync}
-      />
-    );
-    const unsyncBtn = screen.getByText('Unsync');
-    fireEvent.click(unsyncBtn);
-    expect(onUnsync).toHaveBeenCalledWith('card-1');
+    renderTable({ dataMode: 'synced' }, { onUnsync });
+    fireEvent.click(screen.getByText('Unsync'));
+    expect(onUnsync).toHaveBeenCalledWith('row-1');
   });
 
-  it('shows member count when provided', () => {
-    render(
-      <InvestigationCard
-        {...defaultCardProps}
-        dataMode="remote"
-        memberCount={5}
-      />
-    );
+  it('shows member count, role and CLS level when provided', () => {
+    renderTable({ dataMode: 'remote', memberCount: 5, role: 'viewer', clsLevel: 'TLP:AMBER' });
     expect(screen.getByText('5 members')).toBeInTheDocument();
-  });
-
-  it('shows role badge when provided', () => {
-    render(
-      <InvestigationCard
-        {...defaultCardProps}
-        dataMode="remote"
-        role="viewer"
-      />
-    );
     expect(screen.getByText('Viewer')).toBeInTheDocument();
+    expect(screen.getByText('TLP:AMBER')).toBeInTheDocument();
   });
 
-  it('shows CLS level when provided', () => {
+  it('sorts by severity when the header is clicked', () => {
     render(
-      <InvestigationCard
-        {...defaultCardProps}
-        clsLevel="TLP:AMBER"
+      <InvestigationTable
+        onOpen={vi.fn()}
+        rows={[
+          { ...baseRow, folderId: 'a', name: 'Low one', severity: 'low' },
+          { ...baseRow, folderId: 'b', name: 'Critical one', severity: 'critical' },
+        ]}
       />
     );
-    expect(screen.getByText('TLP:AMBER')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Severity' }));
+    const names = screen.getAllByRole('row').slice(1).map((r) => r.textContent ?? '');
+    expect(names[0]).toContain('Critical one');
+    expect(names[1]).toContain('Low one');
   });
 });
 

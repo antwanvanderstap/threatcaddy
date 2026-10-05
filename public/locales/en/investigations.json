@@ -16,6 +16,12 @@
   "hub.noShared": "No shared investigations \u2014 ask a team member to invite you",
   "hub.disconnected": "Server disconnected \u2014 remote investigations unavailable",
 
+  "table.name": "Name",
+  "table.status": "Status",
+  "table.mode": "Access",
+  "table.contents": "Contents",
+  "table.updated": "Updated",
+
   "card.actions": "Actions",
   "card.settings": "Settings",
   "card.archive": "Archive",
