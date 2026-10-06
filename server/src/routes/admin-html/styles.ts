@@ -167,8 +167,9 @@ export function adminStyles(): string {
   .run-status-running { color: #58a6ff; }
   .run-status-timeout { color: #e3b341; }
   .checkbox-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.3rem; margin: 0.5rem 0; }
-  .checkbox-grid label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: #c9d1d9; cursor: pointer; }
-  .checkbox-grid input[type="checkbox"] { accent-color: #58a6ff; }
+  .checkbox-grid label { display: flex; align-items: center; gap: 0.4rem; margin: 0; font-size: 0.8rem; color: #c9d1d9; cursor: pointer; }
+  /* Undo .form-group input (full width, padding, border) for the checkboxes these grids sit in. */
+  .checkbox-grid input[type="checkbox"] { width: auto; flex: 0 0 auto; margin: 0; padding: 0; accent-color: #58a6ff; }
   .trigger-section { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid #21262d; }
 
   /* ─── AI Assistant styles ──────────────────────────────── */
