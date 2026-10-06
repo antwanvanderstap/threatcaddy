@@ -40,13 +40,15 @@ RUN pnpm install --frozen-lockfile
 # so those must be present for the type build to resolve even though nothing
 # in this image ever runs them.
 COPY tsconfig.json tsconfig.app.json tsconfig.node.json ./
-COPY vite.config.ts playwright.config.ts index.html ./
+COPY vite.config.ts vite.config.single.ts vitest.config.ts playwright.config.ts index.html ./
 COPY e2e/ ./e2e/
+COPY standalone-tests/ ./standalone-tests/
+COPY build/ ./build/
 COPY public/ ./public/
 COPY src/ ./src/
 
-# TC_ANALYTICS is deliberately left unset — see cloudflareAnalytics() in
-# vite.config.ts. A self-hosted build must not fetch a third-party beacon.
+# VITE_CF_ANALYTICS_TOKEN is deliberately left unset (see the deployment policy
+# in vite.config.ts): a self-hosted build must not fetch a third-party beacon.
 RUN pnpm build
 
 # ── Serve a dist/ built on another machine ───────────────────────────
