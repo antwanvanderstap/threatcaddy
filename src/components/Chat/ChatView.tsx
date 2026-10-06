@@ -15,6 +15,7 @@ import { cn, formatDate } from '../../lib/utils';
 import { nanoid } from 'nanoid';
 import { TOOL_DEFINITIONS, buildSystemPrompt, executeTool, isWriteTool, fetchViaExtensionBridge } from '../../lib/llm-tools';
 import { getHostToolDefinitions, executeHostSkill } from '../../lib/agent-hosts';
+import { getToolExecutionError, toolExecutionError, type ToolExecutionConstraints } from '../../lib/llm-tool-execution';
 import { parseCtiSlashCommand, planCtiSourceRequests, normalizeCtiSourceRunResult, renderCtiRunMarkdown } from '../../lib/cti-source-formatting';
 import { generateChatTitle } from '../../lib/chat-utils';
 import { truncateConversation, summarizeConversation, MAX_CONTEXT_MESSAGES } from '../../lib/chat-utils';
@@ -22,7 +23,8 @@ import { db } from '../../db';
 import { useChatLoops } from '../../hooks/useChatLoops';
 import { hasLoopsForThread } from '../../lib/chat-loop';
 import { resolveMentions } from '../../lib/chat-mentions';
-import { createCheckpoint, restoreCheckpoint } from '../../lib/checkpoints';
+import { executeCheckpointedTool, restoreCheckpoint } from '../../lib/checkpoints';
+import { getToolBinding } from '../../lib/tool-binding';
 import { useCustomSlashCommands, interpolateTemplate } from '../../hooks/useCustomSlashCommands';
 import { useToast } from '../../contexts/ToastContext';
 import { supportsVision, describeImage } from '../../lib/image-ocr';
@@ -31,6 +33,7 @@ import type { ChatAttachment } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigation } from '../../contexts/NavigationContext';
 import { useInvestigation } from '../../contexts/InvestigationContext';
+import { useScreenshare } from '../../hooks/ScreenshareContext';
 
 /** Strip tool call JSON from streaming content (local LLMs output tool calls as text). */
 // Regexes hoisted to module scope — compiled once, not per render frame
@@ -75,6 +78,7 @@ export function ChatView({
 }: ChatViewProps) {
   const { selectedChatThreadId: selectedThreadId, setSelectedChatThreadId: onSelectThread } = useNavigation();
   const { selectedFolderId, selectedFolder } = useInvestigation();
+  const { maxLevel: screenshareMaxLevel } = useScreenshare();
   const { extensionAvailable, streamingContent, isStreaming, error, toolActivity, sendAgentRequest, abort } = useLLM();
   const { t } = useTranslation('chat');
   const { addToast } = useToast();
@@ -147,31 +151,22 @@ export function ChatView({
     resolve: (approved: boolean) => void;
   } | null>(null);
 
-  // Memoize system prompt — only rebuild when folder context changes
-  const systemPromptRef = useRef<string>('');
-  const systemPromptKeyRef = useRef<string>('');
-  useEffect(() => {
-    const provider = activeThread?.provider ?? 'anthropic';
-    const key = `${selectedFolder?.id ?? ''}:${selectedFolder?.updatedAt ?? ''}:${settings.llmSystemPrompt ?? ''}:${provider}`;
-    if (key === systemPromptKeyRef.current) return;
-    systemPromptKeyRef.current = key;
-    buildSystemPrompt(selectedFolder, settings.llmSystemPrompt, provider).then((prompt) => {
-      systemPromptRef.current = prompt;
-    });
-  }, [selectedFolder, settings.llmSystemPrompt, activeThread?.provider]);
-
   // Auto-select first non-folder thread when none selected (or stale selection)
   useEffect(() => {
+    // App keeps this view mounted but hidden while sharing. Privacy filtering
+    // must not replace the retained thread or its unsent input/attachments.
+    if (screenshareMaxLevel !== null) return;
     if (threads.length > 0 && (!selectedThreadId || !threads.some(t => t.id === selectedThreadId))) {
       const first = threads.find(t => !t.isFolder);
       if (first) onSelectThread(first.id);
     }
-  }, [selectedThreadId, threads, onSelectThread]);
+  }, [selectedThreadId, threads, onSelectThread, screenshareMaxLevel]);
 
   // Scroll to bottom on new messages or streaming content
   useEffect(() => {
+    if (screenshareMaxLevel !== null) return;
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [activeThread?.messages?.length, streamingContent, toolActivity.length]);
+  }, [activeThread?.messages?.length, streamingContent, toolActivity.length, screenshareMaxLevel]);
 
   // Show LLM errors
   useEffect(() => {
@@ -224,7 +219,7 @@ export function ChatView({
       console.error('Failed to create chat thread:', err);
       setLocalError(t('view.errorCreateThread'));
     }
-  }, [onCreateThread, onSelectThread, settings, selectedFolderId, configuredProviders, threads]);
+  }, [onCreateThread, onSelectThread, settings, selectedFolderId, configuredProviders, threads, selectedThreadId, t]);
 
   const getApiKeyForProvider = useCallback((provider: LLMProvider, s: Settings): string | undefined => {
     switch (provider) {
@@ -254,6 +249,7 @@ export function ChatView({
     setErrorHasSettingsLink(false);
 
     const provider = activeThread.provider;
+    const currentTokenTotal = activeThread.messages.reduce((sum, message) => sum + (message.tokenCount ? message.tokenCount.input + message.tokenCount.output : 0), 0);
     const useServerProxy = effectiveRoute === 'server';
 
     // CTI slash commands run allowlisted host tools directly (no LLM call), so they
@@ -277,8 +273,8 @@ export function ChatView({
     const apiKey = useServerProxy ? 'server-proxy' : getApiKeyForProvider(provider, settings);
 
     // Hard token budget cap — prevent sending when over budget
-    if (!isDirectCtiCommand && settings.llmTokenBudget && threadTokenTotalRef.current > settings.llmTokenBudget) {
-      setLocalError(t('view.errorOverBudget', `Token budget exceeded (${threadTokenTotalRef.current.toLocaleString()} / ${settings.llmTokenBudget.toLocaleString()}). Start a new thread or increase the budget in Settings > AI.`));
+    if (!isDirectCtiCommand && settings.llmTokenBudget && currentTokenTotal > settings.llmTokenBudget) {
+      setLocalError(t('view.errorOverBudget', `Token budget exceeded (${currentTokenTotal.toLocaleString()} / ${settings.llmTokenBudget.toLocaleString()}). Start a new thread or increase the budget in Settings > AI.`));
       return;
     }
 
@@ -391,8 +387,9 @@ export function ChatView({
         model: activeThread.model,
         provider: activeThread.provider,
         apiKey: apiKey!,
-        systemPrompt: systemPromptRef.current || await buildSystemPrompt(selectedFolder, settings.llmSystemPrompt, activeThread.provider),
+        systemPrompt: await buildSystemPrompt(selectedFolder, settings.llmSystemPrompt, activeThread.provider),
         endpoint: activeThread.provider === 'local' ? settings.llmLocalEndpoint : undefined,
+        useServerProxy: effectiveRoute === 'server',
         onMessage: onAddMessage,
       });
       const confirmMsg: ChatMessage = {
@@ -454,8 +451,9 @@ export function ChatView({
       return;
     }
 
-    // Use memoized system prompt — only rebuilt when folder context changes
-    const systemPrompt = systemPromptRef.current || await buildSystemPrompt(selectedFolder, settings.llmSystemPrompt, activeThread.provider);
+    // Build for this submission's scope. A shared async cache can complete out
+    // of order after an investigation switch and attach another case's context.
+    const systemPrompt = await buildSystemPrompt(selectedFolder, settings.llmSystemPrompt, activeThread.provider);
 
     // Build text-only messages for truncation, then overlay multimodal content
     const allMessages = [...activeThread.messages, userMsg];
@@ -505,6 +503,8 @@ export function ChatView({
 
     // Track whether any write tools were used
     let usedWriteTool = false;
+    const assistantMessageId = nanoid();
+    const checkpointContext = { id: nanoid(), threadId: activeThread.id, messageId: assistantMessageId };
 
     // In plan mode, filter out write tools so the LLM can only read/analyze
     const currentMode = activeThread.mode || 'act';
@@ -513,6 +513,10 @@ export function ChatView({
     const tools = currentMode === 'plan'
       ? allTools.filter(t => !isWriteTool(t.name))
       : allTools;
+    const toolConstraints: ToolExecutionConstraints = {
+      allowedTools: new Set(tools.map(tool => tool.name)),
+      readOnly: currentMode === 'plan',
+    };
 
     // In plan mode, append instructions to the system prompt
     const finalSystemPrompt = currentMode === 'plan'
@@ -534,16 +538,24 @@ export function ChatView({
         endpoint: activeThread.provider === 'local' ? settings.llmLocalEndpoint : undefined,
         useServerProxy: effectiveRoute === 'server',
       },
-      async (toolUse: ToolUseBlock) => {
+      async (toolUse: ToolUseBlock, signal: AbortSignal) => {
+        if (signal.aborted) return toolExecutionError('Tool execution was cancelled.');
+        const permissionError = getToolExecutionError(toolUse, toolConstraints);
+        if (permissionError) return toolExecutionError(permissionError);
+        let toolBinding: string | undefined;
+        try { toolBinding = await getToolBinding(toolUse, selectedFolderId, currentMode, settings); }
+        catch (error) { return toolExecutionError(error instanceof Error ? error.message : 'Tool configuration is unavailable.'); }
         // Approval gate for write tools in Act mode (skip if yolo mode)
         if (isWriteTool(toolUse.name) && !yoloModeRef.current) {
           const threadAtRequest = activeThread.id;
           const approved = await new Promise<boolean>((resolve) => {
+            const abortApproval = () => { setPendingApproval(null); resolve(false); };
+            signal.addEventListener('abort', abortApproval, { once: true });
             setPendingApproval({
               toolName: toolUse.name,
               input: toolUse.input as Record<string, unknown>,
               threadId: threadAtRequest,
-              resolve,
+              resolve: value => { signal.removeEventListener('abort', abortApproval); resolve(value); },
             });
           });
 
@@ -555,14 +567,17 @@ export function ChatView({
           }
         }
 
-        const result = await executeTool(toolUse, selectedFolderId);
+        if (signal.aborted) return toolExecutionError('Tool execution was cancelled.');
+
+        const result = await executeCheckpointedTool({ ...checkpointContext, signal }, toolUse,
+          () => executeTool(toolUse, selectedFolderId, undefined, { ...toolConstraints, signal, toolBinding }));
         if (isWriteTool(toolUse.name) && !result.isError) {
           usedWriteTool = true;
         }
         return result;
       },
       async ({ content, toolCalls, usage }) => {
-        const msgId = nanoid();
+        const msgId = assistantMessageId;
         const assistantMsg: ChatMessage = {
           id: msgId,
           role: 'assistant',
@@ -573,11 +588,6 @@ export function ChatView({
           createdAt: Date.now(),
         };
         await onAddMessage(activeThread.id, assistantMsg);
-
-        // Create checkpoint for write tool actions (enables undo)
-        if (usedWriteTool && toolCalls.length > 0) {
-          createCheckpoint(activeThread.id, msgId, toolCalls).catch(() => { /* ignore checkpoint failures */ });
-        }
 
         // Trigger entity reload if any write tools were used
         if (usedWriteTool && onEntitiesChanged) {
@@ -598,7 +608,7 @@ export function ChatView({
         }
       }
     );
-  }, [activeThread, settings, selectedFolder, selectedFolderId, sendAgentRequest, onAddMessage, onUpdateThread, onEntitiesChanged, getApiKeyForProvider, getProviderLabel, startLoop, stopAllForThread]);
+  }, [activeThread, settings, selectedFolder, selectedFolderId, sendAgentRequest, onAddMessage, onUpdateThread, onEntitiesChanged, getApiKeyForProvider, getProviderLabel, startLoop, stopAllForThread, pendingImages, customCommands, effectiveRoute, t]);
 
   const handleModelChange = useCallback((model: string, provider: LLMProvider) => {
     if (activeThread) {
@@ -698,9 +708,6 @@ export function ChatView({
     }, 0);
   }, [activeThread]);
 
-  const threadTokenTotalRef = useRef(threadTokenTotal);
-  threadTokenTotalRef.current = threadTokenTotal;
-
   // ── Session rewind ──────────────────────────────────────────────────
   const [rewindConfirmIndex, setRewindConfirmIndex] = useState<number | null>(null);
 
@@ -729,7 +736,12 @@ export function ChatView({
     const cp = cps.find(c => !c.restored);
     if (!cp) return;
 
-    const restored = await restoreCheckpoint(cp.id);
+    let restored = false;
+    try {
+      restored = await restoreCheckpoint(cp.id);
+    } catch (error) {
+      addToast('error', error instanceof Error ? error.message : 'Undo could not be completed.');
+    }
     if (restored) {
       setCheckpointMessageIds(prev => {
         const next = new Set(prev);
@@ -1098,6 +1110,7 @@ export function ChatView({
                   <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-purple/10 border border-purple/20 text-[10px] text-purple me-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-purple animate-pulse" />
                     {t('view.loopCount', { count: activeLoops.length })}
+                    {activeLoops.some(loop => loop.error) && <span role="status" className="text-amber-300" title={activeLoops.filter(loop => loop.error).map(loop => loop.error).join('\n')}>Retrying after error</span>}
                     <button
                       onClick={() => stopAllForThread(activeThread.id)}
                       className="ms-0.5 hover:text-red-400 transition-colors"

@@ -1,12 +1,7 @@
 import { nanoid } from 'nanoid';
 import { resolveVariables, evaluateCondition, resolveDeep, secretVariants } from './integration-expression';
-import {
-  validateHttpUrl,
-  serverProxyFetch,
-  bridgeProxyFetch,
-  hasBridgeProxyFetch,
-  setProxyAllowedDomains,
-} from './proxy-fetch';
+import { postMessageOrigin } from './utils';
+import { resolveIntegrationConfig, validateIntegrationConfig } from './integration-config';
 import type {
   IntegrationTemplate,
   InstalledIntegration,
@@ -47,6 +42,44 @@ export interface ExecutionOptions {
   };
 }
 
+/**
+ * Proxy fetch via the team server (`POST /api/proxy-fetch`).
+ * The server can perform DNS resolution to block private IPs.
+ */
+async function serverProxyFetch(
+  serverUrl: string,
+  getAccessToken: () => Promise<string | null>,
+  url: string,
+  method: string,
+  headers: Record<string, string>,
+  body: string | null,
+): Promise<{ ok: boolean; status: number; statusText: string; data: unknown; headers: Record<string, string> }> {
+  const token = await getAccessToken();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60_000);
+  const resp = await fetch(`${serverUrl}/api/proxy-fetch`, {
+    method: 'POST',
+    signal: controller.signal,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ url, method, headers, body }),
+  });
+  clearTimeout(timer);
+  const result = await resp.json();
+  if (!resp.ok) {
+    throw new Error(result.error || `Server proxy error: ${resp.status}`);
+  }
+  return {
+    ok: result.status >= 200 && result.status < 300,
+    status: result.status,
+    statusText: result.statusText || '',
+    data: result.data,
+    headers: result.headers || {},
+  };
+}
+
 interface ExecutionContext {
   [key: string]: unknown;
   ioc?: ExecutionInput['ioc'];
@@ -72,13 +105,9 @@ function collectSecretValues(
   for (const field of template.configSchema) {
     if ((field.secret || field.type === 'password') && config[field.key]) {
       const val = String(config[field.key]);
-      if (val.length > 0) {
-        secrets.push(val);
-        // A secret usually reaches the log encoded rather than raw — an auth
-        // header is `{{key | base64}}`, not the key itself. Redacting only the
-        // raw value would leave a trivially decodable copy in the run log.
-        secrets.push(...secretVariants(val));
-      }
+      // A template can pipe a secret through a filter (`{{config.key | base64}}`),
+      // so the encoded forms are redacted too.
+      if (val.length > 0) secrets.push(val, ...secretVariants(val));
     }
   }
   return secrets;
@@ -114,22 +143,105 @@ function enforceRequiredDomains(url: URL, requiredDomains: string[]): void {
 }
 
 /**
- * Sync allowed proxy domains to the extension so the background script can
- * enforce an allowlist.
+ * Validate that a URL is safe to fetch (SSRF mitigation).
  *
- * `extraDomains` covers hosts that no template declares — a configured
- * ConnectWise site, for instance — which would otherwise be refused by the
- * background script even though the user set them up deliberately.
+ * Limitation: this is a client-side check on the literal hostname string.
+ * It cannot perform DNS resolution, so a public hostname that resolves to
+ * a private IP (DNS rebinding) will bypass this filter. When a team server
+ * is available, callers should route requests through `POST /api/proxy-fetch`
+ * which can enforce server-side DNS checks.
  */
-export function syncProxyAllowedDomains(
-  templates: IntegrationTemplate[],
-  extraDomains: string[] = [],
-): void {
-  const domains = new Set<string>(extraDomains.filter(Boolean));
-  for (const t of templates) {
-    for (const d of t.requiredDomains ?? []) domains.add(d);
+function validateHttpUrl(urlStr: string): URL {
+  const url = new URL(urlStr);
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    throw new Error(`Blocked URL scheme: ${url.protocol} — only HTTP/HTTPS allowed`);
   }
-  setProxyAllowedDomains(domains);
+  const host = url.hostname;
+  if (
+    ['169.254.169.254', 'localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(host) ||
+    host === '::ffff:127.0.0.1' ||
+    /^10\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal')
+  ) {
+    throw new Error(`Blocked request to private/internal address: ${host}`);
+  }
+  return url;
+}
+
+/**
+ * Proxy fetch via the extension bridge (postMessage → bridge.js → background.js).
+ * Returns a Response-like object. Used to bypass CSP/CORS in extension context.
+ */
+function bridgeProxyFetch(
+  url: string,
+  method: string,
+  headers: Record<string, string>,
+  body: string | null,
+): Promise<{ ok: boolean; status: number; statusText: string; data: unknown; headers: Record<string, string> }> {
+  return new Promise((resolve, reject) => {
+    const requestId = nanoid();
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', handler);
+      reject(new Error('Bridge proxy fetch timed out (30s)'));
+    }, 30000);
+
+    function handler(event: MessageEvent) {
+      if (event.source !== window || !event.data) return;
+      if (event.data.type !== 'TC_PROXY_FETCH_RESULT') return;
+      if (event.data.requestId !== requestId) return;
+      window.removeEventListener('message', handler);
+      clearTimeout(timeout);
+
+      if (!event.data.success && event.data.error) {
+        reject(new Error(event.data.error));
+      } else {
+        resolve({
+          ok: event.data.status >= 200 && event.data.status < 300,
+          status: event.data.status,
+          statusText: event.data.statusText || '',
+          data: event.data.data,
+          headers: event.data.headers || {},
+        });
+      }
+    }
+
+    window.addEventListener('message', handler);
+    window.postMessage({
+      type: 'TC_PROXY_FETCH',
+      requestId,
+      url,
+      method,
+      headers,
+      body,
+    }, postMessageOrigin());
+  });
+}
+
+/** Sync allowed proxy domains to the extension so the background script can enforce an allowlist. */
+export function syncProxyAllowedDomains(templates: IntegrationTemplate[], extraDomains: string[] = []): void {
+  // extraDomains: hosts configured outside any template (a per-tenant API host).
+  const domains = new Set<string>(extraDomains);
+  for (const t of templates) {
+    for (const d of t.requiredDomains ?? []) {
+      domains.add(d);
+    }
+  }
+  try {
+    window.postMessage({ type: 'TC_SET_PROXY_DOMAINS', domains: [...domains] }, postMessageOrigin());
+  } catch { /* extension not present */ }
+}
+
+/** Check if the extension bridge supports proxy_fetch */
+function hasBridgeProxyFetch(): boolean {
+  try {
+    const caps = document.documentElement.dataset.tcBridgeCaps || '';
+    return caps.split(',').includes('proxy_fetch');
+  } catch {
+    return false;
+  }
 }
 
 export class IntegrationExecutor {
@@ -151,16 +263,37 @@ export class IntegrationExecutor {
     let entitiesUpdated = 0;
     let displayResults: unknown;
 
+    const config = resolveIntegrationConfig(template.configSchema, installation.config);
+    const missingConfig = validateIntegrationConfig(template.configSchema, config);
+    if (missingConfig.length > 0) {
+      return {
+        id: runId,
+        integrationId: installation.id,
+        templateId: template.id,
+        status: 'error',
+        trigger: 'manual',
+        inputSummary: this.buildInputSummary(input),
+        outputSummary: this.buildOutputSummary('error', 0, 0, 0),
+        durationMs: Date.now() - startTime,
+        error: `Configure required integration settings before running: ${missingConfig.map(field => field.label).join(', ')}.`,
+        entitiesCreated: 0,
+        entitiesUpdated: 0,
+        apiCallsMade: 0,
+        log: [],
+        createdAt: startTime,
+      };
+    }
+
     const context: ExecutionContext = {
       ioc: input.ioc,
       investigation: input.investigation,
-      config: installation.config,
+      config,
       now: new Date().toISOString(),
       steps: {},
       vars: {},
     };
 
-    const secrets = collectSecretValues(template, installation.config);
+    const secrets = collectSecretValues(template, config);
 
     const addLog = (entry: IntegrationRunLogEntry) => {
       // Redact any secret values that leaked into log detail strings
@@ -195,7 +328,7 @@ export class IntegrationExecutor {
 
         if (stepResult.error) {
           if (!step.continueOnError) {
-            error = stepResult.error;
+            error = redactSecrets(stepResult.error, secrets);
             status = 'error';
             break;
           }

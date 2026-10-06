@@ -3,7 +3,9 @@
 // Protocol version — increment when message shapes change in breaking ways.
 // The webapp reads this to know which features/messages the extension supports.
 var TC_PROTOCOL_VERSION = 1;
-var TC_CAPABILITIES = ['llm_streaming', 'fetch_url', 'clip_import', 'proxy_fetch'];
+var TC_CAPABILITIES = ['llm_streaming', 'fetch_url', 'clip_import', 'proxy_fetch', 'notification_ack'];
+var tcAppApproved = typeof tcAppApproved === 'boolean' ? tcAppApproved : false;
+var tcApprovalRequest = typeof tcApprovalRequest === 'number' ? tcApprovalRequest : 0;
 
 // On file:// pages, window.location.origin is the string "null".
 // postMessage(data, "null") silently drops the message. Use '*' instead.
@@ -27,31 +29,47 @@ function readyPayload() {
     capabilities: TC_CAPABILITIES,
   };
 }
+async function refreshAppApproval() {
+  var request = ++tcApprovalRequest;
+  tcAppApproved = false;
+  delete document.documentElement.dataset.tcBridgeCaps;
+  try {
+    var response = await chrome.runtime.sendMessage({ type: 'PING' });
+    if (request !== tcApprovalRequest) return;
+    tcAppApproved = response?.loaded === true;
+    if (!tcAppApproved) return;
+    document.documentElement.dataset.tcBridgeCaps = TC_CAPABILITIES.join(',');
+    window.postMessage(readyPayload(), postOrigin());
+  } catch {
+    if (request === tcApprovalRequest) { tcAppApproved = false; delete document.documentElement.dataset.tcBridgeCaps; }
+  }
+}
 
 // Guard against duplicate injection (static content_scripts + dynamic executeScript)
 if (document.documentElement.dataset.tcBridgeLoaded) {
   // Already loaded — just re-signal readiness and bail out
   if (chrome && chrome.runtime && chrome.runtime.id) {
-    window.postMessage(readyPayload(), postOrigin());
+    refreshAppApproval();
   }
 } else {
 document.documentElement.dataset.tcBridgeLoaded = '1';
-document.documentElement.dataset.tcBridgeCaps = TC_CAPABILITIES.join(',');
 
 var ports = new Map(); // requestId → Port
 
 function isExtensionValid() {
   try {
-    return !!(chrome && chrome.runtime && chrome.runtime.id);
+    return tcAppApproved && !!(chrome && chrome.runtime && chrome.runtime.id);
   } catch (e) {
     return false;
   }
 }
 
-// Signal extension presence
-if (isExtensionValid()) {
-  window.postMessage(readyPayload(), postOrigin());
-}
+// Installed code is not itself permission to bridge an app. Pairing is verified
+// independently in the background for every later request and streaming port.
+refreshAppApproval();
+chrome.storage.onChanged.addListener(function (changes, area) {
+  if (area === 'local' && changes.approvedAppsV1) refreshAppApproval();
+});
 
 // Re-signal readiness when page is restored from BFCache (back/forward navigation)
 document.addEventListener('pageshow', function (event) {
@@ -82,6 +100,7 @@ window.addEventListener('message', function (event) {
   if (!isOwnOrigin(event)) return;
   if (event.source !== window) return;
   if (!event.data) return;
+  if (!tcAppApproved) return;
 
   if (event.data.type === 'TC_LLM_REQUEST') {
     var requestId = event.data.requestId;
@@ -274,14 +293,24 @@ window.addEventListener('message', function (event) {
         title: notifPayload.title || 'CaddyAgent',
         message: notifPayload.message || '',
         severity: notifPayload.severity || 'warning',
+      }).then(function (response) {
+        window.postMessage({ type: 'TC_NOTIFICATION_RESULT', requestId: event.data.requestId,
+          success: response?.success === true, accepted: response?.accepted === true,
+          error: response?.error || null }, postOrigin());
+      }).catch(function (error) {
+        window.postMessage({ type: 'TC_NOTIFICATION_RESULT', requestId: event.data.requestId,
+          success: false, error: error.message }, postOrigin());
       });
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      window.postMessage({ type: 'TC_NOTIFICATION_RESULT', requestId: event.data.requestId, success: false, error: e.message }, postOrigin());
+    }
   }
 });
 
 // Handle messages from background script (works on both Chrome and Firefox)
 chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
   if (sender.id !== chrome.runtime.id) return;
+  if (!tcAppApproved) { sendResponse({ success: false, error: 'App not approved' }); return; }
   if (message.type === 'THREATCADDY_PING') {
     sendResponse({ pong: true });
     return;

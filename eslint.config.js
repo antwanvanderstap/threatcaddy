@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', 'e2e', 'server/dist', 'coverage']),
+  globalIgnores(['dist', 'dist-single', 'e2e', 'standalone-tests', 'server/dist', 'extension/dist', 'coverage', 'playwright-report', 'test-results']),
   // Client (React + TypeScript)
   {
     files: ['src/**/*.{ts,tsx}'],
@@ -29,9 +29,9 @@ export default defineConfig([
       'react-hooks/set-state-in-effect': 'warn',
     },
   },
-  // Server (TypeScript, no React)
+  // Server and build tooling (TypeScript, no React)
   {
-    files: ['server/src/**/*.ts'],
+    files: ['server/src/**/*.ts', 'build/**/*.ts'],
     ignores: ['server/src/__tests__/**'],
     extends: [
       js.configs.recommended,

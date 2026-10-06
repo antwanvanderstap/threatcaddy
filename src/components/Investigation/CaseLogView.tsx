@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   AlertTriangle,
@@ -25,7 +25,8 @@ interface CaseLogViewProps {
   onEdit: (id: string, body: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onAdvancePhase: (phase: IncidentPhase) => Promise<void>;
-  now: number;
+  /** Fixed clock for the incident durations (tests); live, minute by minute, when omitted. */
+  now?: number;
 }
 
 const TYPE_STYLE: Record<CaseUpdateType, { icon: typeof ClipboardList; chip: string }> = {
@@ -47,9 +48,16 @@ function formatDuration(ms: number | undefined, t: (k: string, o?: Record<string
 }
 
 export function CaseLogView({
-  folder, updates, onAdd, onEdit, onDelete, onAdvancePhase, now,
+  folder, updates, onAdd, onEdit, onDelete, onAdvancePhase, now: fixedNow,
 }: CaseLogViewProps) {
   const { t } = useTranslation('incident');
+  const [liveNow, setLiveNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (fixedNow !== undefined) return;
+    const timer = setInterval(() => setLiveNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, [fixedNow]);
+  const now = fixedNow ?? liveNow;
   const [type, setType] = useState<CaseUpdateType>('status');
   const [body, setBody] = useState('');
   const [submitting, setSubmitting] = useState(false);

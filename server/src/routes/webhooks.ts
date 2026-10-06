@@ -1,6 +1,6 @@
 /**
  * Webhook ingest endpoint — accepts alerts from SIEMs, SOAR platforms, and
- * other external systems. Auto-creates investigations and triggers agents.
+ * other external systems. Creates attributed alerts and owned investigations.
  *
  * Auth: Bearer token or X-Webhook-Secret header (configured via WEBHOOK_INGEST_SECRET env var).
  * No JWT required — this is designed for machine-to-machine integration.
@@ -18,7 +18,7 @@
  *   ],
  *   "investigationId": "abc123",  // optional — add to existing investigation
  *   "tags": ["phishing"],         // optional — tags for the investigation
- *   "triggerAgents": true,         // optional — auto-start agents (default: true)
+ *   "triggerAgents": true,         // retained for compatibility; server handoff is unavailable
  *   "externalRef": {               // optional — dedupe key: a second ingest with the
  *     "system": "connectwise",     //   same system+id appends to that investigation
  *     "id": "213046"               //   instead of opening a new one
@@ -32,37 +32,19 @@
  *     "type": "status",            //   status/finding/action/escalation/containment/handover
  *     "body": "Ticket moved to In Progress"
  *   },
- *   "alertNote": false             // optional — skip the alert note, IOCs and agents
+ *   "alertNote": false             // optional — skip the alert note and IOCs
  *                                  //   (default: true), e.g. for a status-only update
  * }
- *
- * Response `status` is `created`, `merged` (matched by ref, new refs added) or
- * `exists` (matched by ref, nothing new). `exists` writes no alert note, IOCs or
- * agent runs, so a poller can resend overlapping windows without duplicating;
- * an explicit caseUpdate is still appended.
- *
- * GET /api/webhooks/external-refs?system=connectwise[&all=1]
- *   Investigations carrying a ref for `system` (active only unless all=1):
- *   [{ investigationId, ref, status, severity, irPhase }]. Lets a status-sync
- *   script find what to poll without keeping its own mapping.
- *
- * GET /api/webhooks/case-updates?since=<ISO|ms>[&limit=500]
- *   Case-log entries written by people (createdBy set — script entries posted
- *   through ingest have none) that were created or edited after `since`,
- *   oldest first, with author and the investigation's external refs. Backs
- *   the case-log -> ConnectWise time-entry sync; `nextSince` is the cursor.
- *
- * New investigations are created as incidents (severity set, phase `triage`)
- * and shared as `editor` with every active admin and analyst — membership is
- * the only access path, so an unshared investigation would be invisible.
  */
 
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import { db } from '../db/index.js';
-import { folders, notes, standaloneIOCs, botConfigs, caseUpdates, investigationMembers, users } from '../db/schema.js';
-import { eq, and, gt, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
+import { folders, notes, standaloneIOCs, caseUpdates, users, investigationMembers } from '../db/schema.js';
+import { eq, and, gt, inArray, isNull, isNotNull, ne, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger.js';
+import { checkInvestigationAccess } from '../middleware/access.js';
+import { HANDOFF_UNAVAILABLE } from '../bots/handoff-policy.js';
 import { timingSafeEqual, createHmac } from 'node:crypto';
 
 const app = new Hono();
@@ -165,6 +147,10 @@ function sanitizeStr(s: unknown, maxLen: number): string {
   return s.trim().replace(/[\x00-\x1f]/g, '').substring(0, maxLen);
 }
 
+class IngestAuthorizationError extends Error {
+  constructor(message: string, readonly status: 403 | 503) { super(message); }
+}
+
 app.post('/ingest', async (c) => {
   let body: IngestPayload;
   try {
@@ -174,6 +160,9 @@ app.post('/ingest', async (c) => {
   } catch {
     return c.json({ error: 'Invalid JSON body' }, 400);
   }
+
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return c.json({ error: 'Invalid ingest payload' }, 400);
+  if (body.iocs !== undefined && !Array.isArray(body.iocs)) return c.json({ error: 'iocs must be an array' }, 400);
 
   // Strict type + length validation
   const source = sanitizeStr(body.source, MAX_SOURCE_LEN);
@@ -218,103 +207,180 @@ app.post('/ingest', async (c) => {
     caseUpdate = { type, body: updateBody };
   }
 
+  const ownerId = process.env.WEBHOOK_INGEST_OWNER_ID;
+  if (!ownerId) return c.json({ error: 'Webhook ingest requires WEBHOOK_INGEST_OWNER_ID for an active analyst or administrator' }, 503);
+  const [owner] = await db.select({ id: users.id, active: users.active, role: users.role, email: users.email })
+    .from(users).where(eq(users.id, ownerId)).limit(1);
+  if (!owner || !owner.active || !['admin', 'analyst'].includes(owner.role) || owner.email.endsWith('@threatcaddy.internal')) {
+    return c.json({ error: 'Configured ingestion owner is not an active analyst or administrator' }, 503);
+  }
   const now = new Date();
-  let folderId = body.investigationId;
-  let created = false;
-  let status: 'created' | 'merged' | 'exists' | 'appended' = 'appended';
+  if (body.investigationId !== undefined && typeof body.investigationId !== 'string') return c.json({ error: 'investigationId must be a string' }, 400);
+  let folderId = body.investigationId || '';
   let phase: string | null = null;
-
-  // Find or create investigation
+  // Refs this ingest adds to an investigation that matched on another ref.
+  let missingRefs: Record<string, string> = {};
+  let status: 'created' | 'merged' | 'exists' | 'appended' = 'appended';
   if (folderId) {
-    if (typeof folderId !== 'string') return c.json({ error: 'investigationId must be a string' }, 400);
     const existing = await db.select({ id: folders.id, irPhase: folders.irPhase }).from(folders).where(eq(folders.id, folderId)).limit(1);
-    if (existing.length === 0) {
-      return c.json({ error: `Investigation not found` }, 404);
-    }
+    if (!existing.length) return c.json({ error: 'Investigation not found' }, 404);
     phase = existing[0].irPhase ?? null;
-  } else {
-    if (refEntries.length > 0) {
-      const anyRef = sql.join(refEntries.map(([system, id]) => sql`${folders.externalRefs} ->> ${system} = ${id}`), sql` OR `);
-      const existing = await db.select({ id: folders.id, irPhase: folders.irPhase, externalRefs: folders.externalRefs })
-        .from(folders)
-        .where(and(sql`(${anyRef})`, isNull(folders.deletedAt)))
-        .orderBy(folders.createdAt)
-        .limit(1);
-      if (existing.length > 0) {
-        folderId = existing[0].id;
-        phase = existing[0].irPhase ?? null;
-        const have = (existing[0].externalRefs ?? {}) as Record<string, string>;
-        // Only fill systems the investigation has no ref for: an existing ref is
-        // never overwritten, since other tooling already keys off it.
-        const missing = Object.fromEntries(refEntries.filter(([system]) => have[system] === undefined));
-        const clashes = refEntries.filter(([system, id]) => have[system] !== undefined && have[system] !== id);
-        if (clashes.length > 0) {
-          logger.warn('Webhook ingest: ref already set to a different id; kept existing', { folderId, clashes, have });
-        }
-        if (Object.keys(missing).length > 0) {
-          await db.update(folders)
-            .set({
-              externalRefs: sql`coalesce(${folders.externalRefs}, '{}'::jsonb) || ${JSON.stringify(missing)}::jsonb`,
-              version: sql`${folders.version} + 1`,
-              updatedAt: now,
-            })
-            .where(eq(folders.id, folderId));
-          status = 'merged';
-        } else {
-          status = 'exists';
-        }
+  } else if (refEntries.length > 0) {
+    const anyRef = sql.join(refEntries.map(([system, id]) => sql`${folders.externalRefs} ->> ${system} = ${id}`), sql` OR `);
+    const [existing] = await db.select({ id: folders.id, irPhase: folders.irPhase, externalRefs: folders.externalRefs })
+      .from(folders)
+      .where(and(sql`(${anyRef})`, isNull(folders.deletedAt)))
+      .orderBy(folders.createdAt)
+      .limit(1);
+    if (existing) {
+      folderId = existing.id;
+      phase = existing.irPhase ?? null;
+      const have = (existing.externalRefs ?? {}) as Record<string, string>;
+      // Only fill systems the investigation has no ref for: an existing ref is
+      // never overwritten, since other tooling already keys off it.
+      missingRefs = Object.fromEntries(refEntries.filter(([system]) => have[system] === undefined));
+      const clashes = refEntries.filter(([system, id]) => have[system] !== undefined && have[system] !== id);
+      if (clashes.length > 0) {
+        logger.warn('Webhook ingest: ref already set to a different id; kept existing', { folderId, clashes, have });
       }
+      status = Object.keys(missingRefs).length > 0 ? 'merged' : 'exists';
     }
+  }
+  const created = !folderId;
+  if (created) {
+    folderId = nanoid();
+    phase = 'triage';
+    status = 'created';
+  } else if (!await checkInvestigationAccess(ownerId, folderId, 'editor')) {
+    return c.json({ error: 'Configured ingestion owner cannot edit this investigation' }, 403);
+  }
+  // A repeat of something already ingested adds nothing but its case-log entry.
+  const writeAlert = body.alertNote !== false && status !== 'exists';
 
-    if (!folderId) {
-      folderId = nanoid();
-      phase = 'triage';
-      const severityIcon = severity === 'critical' ? '🚨' : severity === 'high' ? '⚠️' : severity === 'medium' ? '🔶' : '📋';
-      await db.insert(folders).values({
-        id: folderId,
-        name: `${severityIcon} ${title}`.substring(0, 200),
-        description: description || `Auto-created from ${source} alert`,
-        status: 'active',
-        tags: [...tags, `source:${source}`, 'auto-ingested'],
-        severity,
-        irPhase: 'triage',
-        detectedAt: parseTimestamp(body.detectedAt) ?? now,
-        externalRefs: refs,
+  // Create alert note
+  const noteId = nanoid();
+  const noteContent = [
+    `# Alert: ${title}`,
+    '',
+    `**Source:** ${source}`,
+    `**Severity:** ${severity}`,
+    description ? `\n${description}` : '',
+    '',
+    body.raw ? `## Raw Alert Data\n\`\`\`json\n${JSON.stringify(body.raw, null, 2).substring(0, 5000)}\n\`\`\`` : '',
+  ].filter(Boolean).join('\n');
+
+  let iocCount = 0;
+  let caseUpdateId: string | undefined;
+  try {
+    await db.transaction(async tx => {
+      const [currentOwner] = await tx.select({ active: users.active, role: users.role, email: users.email })
+        .from(users).where(eq(users.id, ownerId)).for('share');
+      if (!currentOwner || !currentOwner.active || !['admin', 'analyst'].includes(currentOwner.role)
+          || currentOwner.email.endsWith('@threatcaddy.internal')) throw new IngestAuthorizationError('Configured ingestion owner is no longer eligible', 503);
+      if (!created && !await checkInvestigationAccess(ownerId, folderId, 'editor', tx)) throw new IngestAuthorizationError('Configured ingestion owner can no longer edit this investigation', 403);
+      if (created) {
+        const severityIcon = severity === 'critical' ? '🚨' : severity === 'high' ? '⚠️' : severity === 'medium' ? '🔶' : '📋';
+        await tx.insert(folders).values({
+          id: folderId, name: `${severityIcon} ${title}`.substring(0, 200),
+          description: description || `Auto-created from ${source} alert`, status: 'active',
+          tags: [...tags, `source:${source}`, 'auto-ingested'],
+          severity,
+          irPhase: 'triage',
+          detectedAt: parseTimestamp(body.detectedAt) ?? now,
+          externalRefs: refs,
+          createdBy: ownerId, updatedBy: ownerId, createdAt: now, updatedAt: now,
+        });
+        await tx.insert(investigationMembers).values({ id: nanoid(), folderId, userId: ownerId, role: 'owner', joinedAt: now });
+        // Ingested incidents are the team's queue: every active analyst and
+        // administrator can work them, not only the configured owner.
+        const team = await tx.select({ id: users.id, email: users.email }).from(users)
+          .where(and(eq(users.active, true), inArray(users.role, ['admin', 'analyst']), ne(users.id, ownerId)));
+        const humans = team.filter(u => !u.email.endsWith('@threatcaddy.internal'));
+        if (humans.length > 0) {
+          await tx.insert(investigationMembers)
+            .values(humans.map(u => ({ id: nanoid(), folderId, userId: u.id, role: 'editor' as const, joinedAt: now })))
+            .onConflictDoNothing();
+        }
+      } else if (Object.keys(missingRefs).length > 0) {
+        await tx.update(folders)
+          .set({
+            externalRefs: sql`coalesce(${folders.externalRefs}, '{}'::jsonb) || ${JSON.stringify(missingRefs)}::jsonb`,
+            version: sql`${folders.version} + 1`,
+            updatedBy: ownerId,
+            updatedAt: now,
+          })
+          .where(eq(folders.id, folderId));
+      }
+      if (caseUpdate) {
+        caseUpdateId = nanoid();
+        // Attributed to the sending system, not to a user: the case-updates
+        // feed below lists only analyst-written entries (createdBy set), so an
+        // integration never reads back what it wrote itself.
+        await tx.insert(caseUpdates).values({
+          id: caseUpdateId,
+          folderId,
+          type: caseUpdate.type as 'status',
+          body: caseUpdate.body,
+          phase,
+          authorName: source,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      if (!writeAlert) return;
+      await tx.insert(notes).values({
+        id: noteId,
+        folderId,
+        title: `[${source.toUpperCase()}] ${title}`.substring(0, 200),
+        content: noteContent,
+        tags: ['alert', `source:${source}`, `severity:${severity}`],
+        createdBy: ownerId, updatedBy: ownerId,
+        pinned: severity === 'critical' || severity === 'high',
+        trashed: false,
+        archived: false,
+        version: 1,
         createdAt: now,
         updatedAt: now,
       });
 
-      const team = await db.select({ id: users.id })
-        .from(users)
-        .where(and(eq(users.active, true), inArray(users.role, ['admin', 'analyst'])));
-      if (team.length > 0) {
-        await db.insert(investigationMembers)
-          .values(team.map(u => ({ id: nanoid(), folderId: folderId!, userId: u.id, role: 'editor' as const, joinedAt: now })))
-          .onConflictDoNothing();
+      // Batch-insert IOCs
+      if (body.iocs?.length) {
+        const VALID_CONFIDENCES = new Set(['low', 'medium', 'high', 'confirmed']);
+        const iocValues = body.iocs.slice(0, 100)
+          .filter(ioc => ioc && typeof ioc.type === 'string' && typeof ioc.value === 'string' && ioc.type && ioc.value)
+          .map(ioc => ({
+            id: nanoid(),
+            folderId: folderId!,
+            type: sanitizeStr(ioc.type, 50),
+            value: sanitizeStr(ioc.value, MAX_IOC_VALUE_LEN),
+            confidence: (VALID_CONFIDENCES.has(ioc.confidence || '') ? ioc.confidence : 'medium') as 'low' | 'medium' | 'high' | 'confirmed',
+            analystNotes: `Auto-extracted from ${source} alert`,
+            tags: ['auto-ingested', `source:${source}`],
+            createdBy: ownerId, updatedBy: ownerId,
+            iocStatus: 'new',
+            trashed: false,
+            archived: false,
+            version: 1,
+            createdAt: now,
+            updatedAt: now,
+          }));
+
+        if (iocValues.length > 0) {
+          await tx.insert(standaloneIOCs).values(iocValues);
+          iocCount = iocValues.length;
+        }
       }
 
-      created = true;
-      status = 'created';
-      logger.info('Webhook ingest: created investigation', { folderId, source, title, refs, members: team.length });
-    }
-  }
-
-  let caseUpdateId: string | undefined;
-  if (caseUpdate) {
-    caseUpdateId = nanoid();
-    await db.insert(caseUpdates).values({
-      id: caseUpdateId,
-      folderId,
-      type: caseUpdate.type as 'status',
-      body: caseUpdate.body,
-      phase,
-      authorName: source,
-      createdAt: now,
-      updatedAt: now,
     });
+  } catch (error) {
+    if (error instanceof IngestAuthorizationError) return c.json({ error: error.message }, error.status);
+    throw error;
   }
+  if (created) logger.info('Webhook ingest: created owned investigation', { folderId, source, refs });
+  // Handoff execution is deliberately unavailable until policy parity is implemented.
+  const agentsTriggered = 0;
 
-  if (body.alertNote === false || status === 'exists') {
+  if (!writeAlert) {
     return c.json({
       ok: true,
       investigationId: folderId,
@@ -329,106 +395,17 @@ app.post('/ingest', async (c) => {
     });
   }
 
-  // Create alert note
-  const noteId = nanoid();
-  const noteContent = [
-    `# Alert: ${title}`,
-    '',
-    `**Source:** ${source}`,
-    `**Severity:** ${severity}`,
-    description ? `\n${description}` : '',
-    '',
-    body.raw ? `## Raw Alert Data\n\`\`\`json\n${JSON.stringify(body.raw, null, 2).substring(0, 5000)}\n\`\`\`` : '',
-  ].filter(Boolean).join('\n');
-
-  await db.insert(notes).values({
-    id: noteId,
-    folderId,
-    title: `[${source.toUpperCase()}] ${title}`.substring(0, 200),
-    content: noteContent,
-    tags: ['alert', `source:${source}`, `severity:${severity}`],
-    pinned: severity === 'critical' || severity === 'high',
-    trashed: false,
-    archived: false,
-    version: 1,
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  // Batch-insert IOCs
-  let iocCount = 0;
-  if (body.iocs?.length) {
-    const VALID_CONFIDENCES = new Set(['low', 'medium', 'high', 'confirmed']);
-    const iocValues = body.iocs.slice(0, 100)
-      .filter(ioc => typeof ioc.type === 'string' && typeof ioc.value === 'string' && ioc.type && ioc.value)
-      .map(ioc => ({
-        id: nanoid(),
-        folderId: folderId!,
-        type: sanitizeStr(ioc.type, 50),
-        value: sanitizeStr(ioc.value, MAX_IOC_VALUE_LEN),
-        confidence: (VALID_CONFIDENCES.has(ioc.confidence || '') ? ioc.confidence : 'medium') as 'low' | 'medium' | 'high' | 'confirmed',
-        analystNotes: `Auto-extracted from ${source} alert`,
-        tags: ['auto-ingested', `source:${source}`],
-        iocStatus: 'new',
-        trashed: false,
-        archived: false,
-        version: 1,
-        createdAt: now,
-        updatedAt: now,
-      }));
-
-    if (iocValues.length > 0) {
-      await db.insert(standaloneIOCs).values(iocValues);
-      iocCount = iocValues.length;
-    }
-  }
-
-  // Trigger agents — find bots scoped to this investigation OR with global scope
-  const triggerAgents = body.triggerAgents !== false;
-  let agentsTriggered = 0;
-  if (triggerAgents) {
-    try {
-      const { botManager } = await import('../bots/bot-manager.js');
-      const bots = await db.select()
-        .from(botConfigs)
-        .where(and(eq(botConfigs.sourceType, 'caddy-agent'), eq(botConfigs.enabled, true)));
-
-      const matchingBots = bots.filter(b =>
-        b.scopeType === 'global' ||
-        (Array.isArray(b.scopeFolderIds) && (b.scopeFolderIds as string[]).includes(folderId!))
-      );
-
-      // Actually trigger each matching bot
-      for (const bot of matchingBots) {
-        botManager.executeBot(bot.id, 'webhook', undefined, {
-          source,
-          title,
-          severity,
-          investigationId: folderId,
-          alertNoteId: noteId,
-        }).catch(err => {
-          logger.error('Webhook ingest: bot execution failed', { botId: bot.id, error: String(err) });
-        });
-      }
-      agentsTriggered = matchingBots.length;
-
-      if (agentsTriggered > 0) {
-        logger.info('Webhook ingest: triggered agents', { folderId, agents: agentsTriggered });
-      }
-    } catch (err) {
-      logger.warn('Webhook ingest: failed to trigger agents', { error: String(err) });
-    }
-  }
-
   return c.json({
     ok: true,
     investigationId: folderId,
     created,
     status,
-    noteId,
     caseUpdateId,
+    noteId,
     iocs: iocCount,
     agentsTriggered,
+    agentExecutionAvailable: false,
+    ...(body.triggerAgents !== false ? { agentExecutionReason: HANDOFF_UNAVAILABLE } : {}),
     message: created
       ? `Investigation created with ${iocCount} IOCs. ${agentsTriggered} agents triggered.`
       : `Alert added to existing investigation. ${iocCount} IOCs created. ${agentsTriggered} agents triggered.`,

@@ -1,12 +1,10 @@
--- Server-side incident response: the incident fields the client has carried
--- on Folder since Dexie v36 (severity, IR phase, the incident clock, the
--- commander and externalRefs), plus the case_updates log.
+-- Server-side incident response: the incident fields the client carries on
+-- Folder (severity, IR phase, the incident clock, the commander and
+-- externalRefs), plus the case_updates log, which syncs like evidence_items.
 --
--- Until now the server had no columns for these, so a synced folder silently
--- lost them and scripted intake had no external-ref dedupe key.
---
--- Every statement is IF NOT EXISTS / exception-guarded so this is safe to
--- re-run, and safe on databases already fixed up with `drizzle-kit push`.
+-- The schema statements are IF NOT EXISTS / exception-guarded: installations
+-- that ran this change before it was renumbered after the durable sync cursor
+-- already have these columns and the table, and only gain the sync capture.
 
 -- ── Incident fields on folders ──────────────────────────────────────────
 ALTER TABLE "folders" ADD COLUMN IF NOT EXISTS "severity" text;
@@ -64,3 +62,49 @@ CREATE INDEX IF NOT EXISTS "idx_case_updates_folder_id_created_at" ON "case_upda
 CREATE INDEX IF NOT EXISTS "idx_case_updates_updated_at" ON "case_updates" USING btree ("updated_at");
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_case_updates_folder_id_updated_at" ON "case_updates" USING btree ("folder_id","updated_at");
+
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION sync_revision() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  previous_version integer;
+  api_table text;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    api_table := CASE TG_TABLE_NAME
+      WHEN 'timeline_events' THEN 'timelineEvents'
+      WHEN 'standalone_iocs' THEN 'standaloneIOCs'
+      WHEN 'chat_threads' THEN 'chatThreads'
+      WHEN 'evidence_items' THEN 'evidenceItems'
+      WHEN 'case_updates' THEN 'caseUpdates'
+      ELSE TG_TABLE_NAME
+    END;
+    SELECT max((record->>'version')::integer) INTO previous_version
+      FROM sync_changes WHERE table_name = api_table AND entity_id = NEW.id;
+    NEW.version := COALESCE(previous_version, 0) + 1;
+  ELSE
+    NEW.version := OLD.version + 1;
+  END IF;
+  NEW.updated_at := clock_timestamp();
+  RETURN NEW;
+END;
+$$;
+--> statement-breakpoint
+DO $$
+DECLARE item record; next_cursor bigint;
+BEGIN
+  PERFORM cursor FROM sync_clock WHERE id = 1 FOR UPDATE;
+  LOCK TABLE case_updates IN SHARE ROW EXCLUSIVE MODE;
+  FOR item IN SELECT to_jsonb(t) AS data FROM case_updates t ORDER BY id LOOP
+    UPDATE sync_clock SET cursor = cursor + 1 WHERE id = 1 RETURNING cursor INTO next_cursor;
+    INSERT INTO sync_changes (cursor, table_name, entity_id, folder_id, op, record)
+      VALUES (next_cursor, 'caseUpdates', item.data->>'id', item.data->>'folder_id',
+        CASE WHEN item.data->>'deleted_at' IS NOT NULL THEN 'delete' ELSE 'put' END, item.data);
+  END LOOP;
+END;
+$$;
+--> statement-breakpoint
+CREATE TRIGGER sync_lock_writes BEFORE INSERT OR UPDATE OR DELETE ON case_updates FOR EACH STATEMENT EXECUTE FUNCTION sync_lock_writes();
+--> statement-breakpoint
+CREATE TRIGGER sync_revision BEFORE INSERT OR UPDATE ON case_updates FOR EACH ROW EXECUTE FUNCTION sync_revision();
+--> statement-breakpoint
+CREATE TRIGGER sync_record_change AFTER INSERT OR UPDATE OR DELETE ON case_updates FOR EACH ROW EXECUTE FUNCTION sync_record_change('caseUpdates');

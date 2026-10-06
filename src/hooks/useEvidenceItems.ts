@@ -1,29 +1,49 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { nanoid } from 'nanoid';
 import { db } from '../db';
 import type { EvidenceItem } from '../types';
 import { purgeOldTrash } from '../lib/trash-purge';
+import { deleteEntitiesWithReferences } from '../lib/entity-relations';
 
 /** Manages imported evidence source material stored separately from notes. */
 export function useEvidenceItems(folderId?: string) {
   const [evidenceItems, setEvidenceItems] = useState<EvidenceItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const scope = useMemo(() => ({ folderId }), [folderId]);
+  const [loadState, setLoadState] = useState({ scope, loading: true, loadedSuccessfully: false });
+  const activeScopeRef = useRef<typeof scope | null>(null);
+  const loadRequestRef = useRef<symbol | null>(null);
+
+  useLayoutEffect(() => {
+    activeScopeRef.current = scope;
+    return () => { activeScopeRef.current = null; loadRequestRef.current = null; };
+  }, [scope]);
 
   const loadEvidenceItems = useCallback(async () => {
+    if (activeScopeRef.current !== scope) return;
+    const request = Symbol('evidence-load');
+    loadRequestRef.current = request;
+    const current = () => activeScopeRef.current === scope && loadRequestRef.current === request;
+    setLoadState({ scope, loading: true, loadedSuccessfully: false });
     try {
       const all = folderId
         ? await db.evidenceItems.where('folderId').equals(folderId).toArray()
         : await db.evidenceItems.toArray();
+      if (!current()) return;
       const remaining = await purgeOldTrash(all, db.evidenceItems);
+      if (!current()) return;
       setEvidenceItems(remaining.sort((a, b) => b.updatedAt - a.updatedAt));
+      setLoadState({ scope, loading: false, loadedSuccessfully: true });
     } catch (err) {
-      console.error('Failed to load evidence:', err);
-    } finally {
-      setLoading(false);
+      if (current()) {
+        console.error('Failed to load evidence:', err);
+        setLoadState({ scope, loading: false, loadedSuccessfully: false });
+      }
     }
-  }, [folderId]);
+  }, [folderId, scope]);
 
   useEffect(() => {
+    // Initial IndexedDB hydration intentionally updates loading/data state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadEvidenceItems();
   }, [loadEvidenceItems]);
 
@@ -61,7 +81,7 @@ export function useEvidenceItems(folderId?: string) {
   }, []);
 
   const deleteEvidenceItem = useCallback(async (id: string) => {
-    await db.evidenceItems.delete(id);
+    await deleteEntitiesWithReferences({ evidenceItems: [id] });
     setEvidenceItems((prev) => prev.filter((item) => item.id !== id));
   }, []);
 
@@ -81,7 +101,7 @@ export function useEvidenceItems(folderId?: string) {
   const emptyTrashEvidenceItems = useCallback(async () => {
     const trashedIds = evidenceItems.filter((item) => item.trashed).map((item) => item.id);
     if (trashedIds.length === 0) return;
-    await db.evidenceItems.bulkDelete(trashedIds);
+    await deleteEntitiesWithReferences({ evidenceItems: trashedIds });
     setEvidenceItems((prev) => prev.filter((item) => !item.trashed));
   }, [evidenceItems]);
 
@@ -117,7 +137,8 @@ export function useEvidenceItems(folderId?: string) {
 
   return {
     evidenceItems,
-    loading,
+    loading: loadState.scope !== scope || loadState.loading,
+    loadedSuccessfully: loadState.scope === scope && loadState.loadedSuccessfully,
     createEvidenceItem,
     updateEvidenceItem,
     deleteEvidenceItem,

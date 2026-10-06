@@ -9,7 +9,9 @@ import type {
   InvestigationMember,
 } from '../types';
 import { db } from '../db';
+import { evictSyncedFolder } from '../lib/sync-cache';
 import { fetchInvestigationMembers } from '../lib/server-api';
+import { useScreenshare } from '../hooks/ScreenshareContext';
 
 // ---------------------------------------------------------------------------
 // Context value
@@ -57,7 +59,7 @@ interface InvestigationContextValue {
   handleOpenInvestigation: (folderId: string, mode: InvestigationDataMode) => void;
   handleSyncLocally: (folderId: string) => void;
   handleUnsync: (folderId: string) => void;
-  handleUnsyncConfirmed: (folderId: string) => void;
+  handleUnsyncConfirmed: (folderId: string) => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -104,8 +106,11 @@ export function InvestigationProvider({
   const [selectedIOCTypes, setSelectedIOCTypes] = useState<IOCType[]>([]);
   const [showTrash, setShowTrash] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
-  const [investigationMembers, setInvestigationMembers] = useState<InvestigationMember[]>([]);
-  const [agentPendingCount, setAgentPendingCount] = useState(0);
+  const selectionScope = useMemo(() => ({ selectedFolderId, authConnected }), [selectedFolderId, authConnected]);
+  const [memberSnapshot, setMemberSnapshot] = useState<{ scope: typeof selectionScope; members: InvestigationMember[] } | null>(null);
+  const [pendingSnapshot, setPendingSnapshot] = useState<{ scope: typeof selectionScope; count: number } | null>(null);
+  const investigationMembers = useMemo(() => memberSnapshot?.scope === selectionScope ? memberSnapshot.members : [], [memberSnapshot, selectionScope]);
+  const agentPendingCount = pendingSnapshot?.scope === selectionScope ? pendingSnapshot.count : 0;
   const [syncingFolderId, setSyncingFolderId] = useState<string | null>(null);
   const [confirmUnsyncId, setConfirmUnsyncId] = useState<string | null>(null);
 
@@ -143,15 +148,7 @@ export function InvestigationProvider({
   const handleUnsyncConfirmed = useCallback(async (folderId: string) => {
     setSyncingFolderId(folderId);
     try {
-      await Promise.all([
-        db.notes.where('folderId').equals(folderId).delete(),
-        db.tasks.where('folderId').equals(folderId).delete(),
-        db.timelineEvents.where('folderId').equals(folderId).delete(),
-        db.whiteboards.where('folderId').equals(folderId).delete(),
-        db.standaloneIOCs.where('folderId').equals(folderId).delete(),
-        db.chatThreads.where('folderId').equals(folderId).delete(),
-      ]);
-      await db.folders.delete(folderId);
+      await evictSyncedFolder(folderId);
       if (selectedFolderId === folderId) {
         setSelectedFolderIdRaw(undefined);
       }
@@ -166,46 +163,44 @@ export function InvestigationProvider({
   }, []);
 
   const clearFilters = useCallback(() => {
-    setSelectedFolderIdRaw(undefined);
+    setSelectedFolderId(undefined);
     setSelectedTag(undefined);
     setShowTrash(false);
     setShowArchive(false);
-  }, []);
+  }, [setSelectedFolderId]);
 
   // --- effects ---
 
   // Fetch investigation members when folder or auth changes
   useEffect(() => {
-    if (!authConnected || !selectedFolderId) {
-      setInvestigationMembers([]);
-      return;
-    }
+    if (!authConnected || !selectedFolderId) return;
+    let active = true;
     fetchInvestigationMembers(selectedFolderId)
-      .then(setInvestigationMembers)
-      .catch(() => setInvestigationMembers([]));
-  }, [authConnected, selectedFolderId]);
+      .then(members => { if (active) setMemberSnapshot({ scope: selectionScope, members }); })
+      .catch(() => { if (active) setMemberSnapshot({ scope: selectionScope, members: [] }); });
+    return () => { active = false; };
+  }, [authConnected, selectedFolderId, selectionScope]);
 
   // Agent pending count
   useEffect(() => {
-    if (!selectedFolderId) {
-      setAgentPendingCount(0);
-      return;
-    }
+    if (!selectedFolderId) return;
+    let active = true;
     db.agentActions
       .where('[investigationId+status]')
       .equals([selectedFolderId, 'pending'])
       .count()
-      .then(setAgentPendingCount)
-      .catch(() => setAgentPendingCount(0));
-  }, [selectedFolderId]);
+      .then(count => { if (active) setPendingSnapshot({ scope: selectionScope, count }); })
+      .catch(() => { if (active) setPendingSnapshot({ scope: selectionScope, count: 0 }); });
+    return () => { active = false; };
+  }, [selectedFolderId, selectionScope]);
 
   // Auto-deselect when selected folder no longer exists (deleted externally or by another tab)
   useEffect(() => {
-    if (selectedFolderId && folders.length > 0 && !folders.find(f => f.id === selectedFolderId)) {
-      setSelectedFolderIdRaw(undefined);
-      setInvestigationMode('local');
+    // Remote-only investigations are intentionally absent from the local cache.
+    if (investigationMode !== 'remote' && selectedFolderId && folders.length > 0 && !folders.find(f => f.id === selectedFolderId)) {
+      setSelectedFolderId(undefined);
     }
-  }, [selectedFolderId, folders]);
+  }, [selectedFolderId, folders, investigationMode, setSelectedFolderId]);
 
   // --- computed ---
   const selectedFolder = useMemo(() => folders.find(f => f.id === selectedFolderId), [folders, selectedFolderId]);
@@ -276,6 +271,59 @@ export function InvestigationProvider({
       {children}
     </InvestigationContext.Provider>
   );
+}
+
+/**
+ * Restrict the rendered investigation context without changing the underlying
+ * selection. Turning screenshare off restores the same investigation and draft.
+ * Keep this inside ScreenshareContext and outside the rendered application UI.
+ */
+export function InvestigationVisibilityScope({ folders, tags, children }: {
+  folders: Folder[];
+  tags: Tag[];
+  children: ReactNode;
+}) {
+  const context = useInvestigation();
+  const { maxLevel } = useScreenshare();
+  const value = useMemo<InvestigationContextValue>(() => {
+    // A remote-only investigation is absent from the local folder list even
+    // with unrestricted data; preserve every existing behavior when sharing is off.
+    if (maxLevel === null) return context;
+
+    const visibleIds = new Set(folders.map(folder => folder.id));
+    const visibleTags = new Set(tags.map(tag => tag.name));
+    const selectedFolder = folders.find(folder => folder.id === context.selectedFolderId);
+    const editingFolder = folders.find(folder => folder.id === context.editingFolderId);
+    const selectedTagObj = tags.find(tag => tag.name === context.selectedTag);
+    const canSelect = (id: string | undefined) => id === undefined || visibleIds.has(id);
+
+    return {
+      ...context,
+      folders,
+      tags,
+      selectedFolder,
+      selectedFolderId: selectedFolder?.id,
+      editingFolder,
+      editingFolderId: editingFolder?.id,
+      selectedTag: selectedTagObj?.name,
+      selectedTagObj,
+      investigationMode: selectedFolder ? context.investigationMode : 'local',
+      investigationMembers: selectedFolder ? context.investigationMembers : [],
+      agentPendingCount: selectedFolder ? context.agentPendingCount : 0,
+      syncingFolderId: context.syncingFolderId && visibleIds.has(context.syncingFolderId) ? context.syncingFolderId : null,
+      confirmUnsyncId: context.confirmUnsyncId && visibleIds.has(context.confirmUnsyncId) ? context.confirmUnsyncId : null,
+      setSelectedFolderId: id => { if (canSelect(id)) context.setSelectedFolderId(id); },
+      setEditingFolderId: id => { if (canSelect(id)) context.setEditingFolderId(id); },
+      setSelectedTag: tag => { if (tag === undefined || visibleTags.has(tag)) context.setSelectedTag(tag); },
+      setConfirmUnsyncId: id => { if (id === null || visibleIds.has(id)) context.setConfirmUnsyncId(id); },
+      handleOpenInvestigation: (id, mode) => { if (visibleIds.has(id)) context.handleOpenInvestigation(id, mode); },
+      handleSyncLocally: id => { if (visibleIds.has(id)) context.handleSyncLocally(id); },
+      handleUnsync: id => { if (visibleIds.has(id)) context.handleUnsync(id); },
+      handleUnsyncConfirmed: async id => { if (visibleIds.has(id)) await context.handleUnsyncConfirmed(id); },
+    };
+  }, [context, folders, tags, maxLevel]);
+
+  return <InvestigationContext.Provider value={value}>{children}</InvestigationContext.Provider>;
 }
 
 // ---------------------------------------------------------------------------

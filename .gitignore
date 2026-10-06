@@ -44,10 +44,13 @@ coverage
 
 # Claude / AI
 .claude/
+.agents/
+.codex/
 CLAUDE.md
 
-# Plans (local only)
+# Private planning, review notes and evidence (local only)
 plans/
+docs/reviews/
 playwright-report/
 test-results/
 caddy-bin/

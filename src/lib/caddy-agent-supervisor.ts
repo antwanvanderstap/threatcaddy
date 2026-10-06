@@ -9,11 +9,15 @@
 import { db } from '../db';
 import { nanoid } from 'nanoid';
 import type { Folder, Settings, ChatThread, ChatMessage, ContentBlock, ToolUseBlock, LLMProvider } from '../types';
-import { TOOL_DEFINITIONS } from './llm-tool-defs';
+import { TOOL_DEFINITIONS, isWriteTool } from './llm-tool-defs';
 import { executeTool, buildSystemPrompt } from './llm-tools';
 import { resolveRoutingMode, sendViaExtension, sendViaServer } from './llm-router';
-import { postMessageOrigin } from './utils';
+import { notifyDesktop } from './desktop-notifications';
 import { parseToolCallsFromText } from './caddy-agent';
+import { SUPERVISOR_TOOLS, SUPERVISOR_ACTION_PROFILE, getSupervisorToolPermission, validateSupervisorDispatch } from './supervisor-tool-policy';
+import { queueAgentAction } from './agent-action-approval';
+import { toolExecutionError, type ToolExecutionResult } from './llm-tool-execution';
+import { cancellableRequest } from './request-cancellation';
 
 // ── Constants ───────────────────────────────────────────────────────────
 
@@ -24,21 +28,6 @@ const MAX_SUPERVISOR_TURNS = 5;
 const SUPERVISOR_NOTE_RETENTION = 200;
 /** Max create_note calls the supervisor is allowed to make within one cycle. */
 const SUPERVISOR_NOTES_PER_CYCLE = 3;
-
-/** Tools the supervisor is allowed to use — includes write tools for cross-investigation coordination. */
-const SUPERVISOR_TOOLS = new Set([
-  'list_investigations',
-  'get_investigation_details',
-  'search_across_investigations',
-  'compare_investigations',
-  'get_investigation_summary',
-  'list_iocs',
-  'search_notes',
-  'create_note',
-  'create_task',
-  'link_entities',
-  'update_ioc',
-]);
 
 const SUPERVISOR_TOOL_DEFS = TOOL_DEFINITIONS.filter(t => SUPERVISOR_TOOLS.has(t.name));
 
@@ -80,10 +69,14 @@ function callLLM(opts: {
   tools: typeof SUPERVISOR_TOOL_DEFS;
   useServerProxy: boolean;
   endpoint?: string;
+  signal: AbortSignal;
 }): Promise<{ content: string; toolCalls: ToolUseBlock[] }> {
   const LLM_TIMEOUT_MS = 120_000;
+  const lifecycle = cancellableRequest(opts.signal);
 
   const llmPromise = new Promise<{ content: string; toolCalls: ToolUseBlock[] }>((resolve, reject) => {
+    lifecycle.signal.addEventListener('abort', () => reject(new Error('Supervisor request was cancelled or timed out.')), { once: true });
+    if (lifecycle.signal.aborted) { reject(new Error('Supervisor request was cancelled.')); return; }
     let accumulated = '';
     const request = {
       provider: opts.provider,
@@ -96,8 +89,9 @@ function callLLM(opts: {
     };
     const toolNames = (opts.tools || []).map(t => t.name);
     const callbacks = {
-      onChunk: (content: string) => { accumulated += content; },
+      onChunk: (content: string) => { if (!lifecycle.signal.aborted) accumulated += content; },
       onDone: (_stopReason: string, contentBlocks: unknown[]) => {
+        if (lifecycle.signal.aborted) return;
         const blocks = contentBlocks as ContentBlock[];
         let toolCalls = blocks.filter(
           (b): b is ToolUseBlock => b.type === 'tool_use' && !!b.id && !!b.name && typeof b.input === 'object'
@@ -110,16 +104,16 @@ function callLLM(opts: {
       },
       onError: (error: string) => reject(new Error(`Supervisor LLM failed (${opts.provider}/${opts.model}): ${error || 'unknown'}`)),
     };
-    if (opts.useServerProxy) sendViaServer(request, callbacks);
-    else sendViaExtension(request, callbacks);
+    if (opts.useServerProxy) sendViaServer(request, callbacks, lifecycle.signal);
+    else sendViaExtension(request, callbacks, lifecycle.signal);
   });
 
   let timeoutId: ReturnType<typeof setTimeout>;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(`Supervisor LLM timed out after ${LLM_TIMEOUT_MS / 1000}s`)), LLM_TIMEOUT_MS);
+    timeoutId = setTimeout(() => { lifecycle.controller.abort(); reject(new Error(`Supervisor LLM timed out after ${LLM_TIMEOUT_MS / 1000}s`)); }, LLM_TIMEOUT_MS);
   });
 
-  return Promise.race([llmPromise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+  return Promise.race([llmPromise, timeoutPromise]).finally(() => { clearTimeout(timeoutId); lifecycle.dispose(); });
 }
 
 const SUPERVISOR_SYSTEM_PROMPT = `You are the CaddyAgent Supervisor — a cross-investigation analyst that monitors all active investigations in a threat intelligence platform.
@@ -151,11 +145,11 @@ IMPORTANT: Use write tools judiciously. Only create tasks and links when finding
 // ── Main ────────────────────────────────────────────────────────────────
 
 /** Get or create the Supervisor system investigation. */
-async function ensureSupervisorFolder(): Promise<Folder> {
+async function ensureSupervisorFolder(signal: AbortSignal): Promise<Folder> {
   const existing = await db.folders
-    .where('name')
-    .equals(SUPERVISOR_FOLDER_NAME)
+    .filter(folder => folder.name === SUPERVISOR_FOLDER_NAME)
     .first();
+  signal.throwIfAborted();
 
   if (existing) return existing;
 
@@ -177,7 +171,23 @@ export async function runSupervisorCycle(
   settings: Settings,
   extensionAvailable: boolean,
   onProgress?: (status: string) => void,
+  signal?: AbortSignal,
 ): Promise<SupervisorResult> {
+  const lifecycle = cancellableRequest(signal);
+  try {
+    return await runSupervisorCycleInner(settings, extensionAvailable, onProgress, lifecycle.signal);
+  } finally {
+    lifecycle.dispose();
+  }
+}
+
+async function runSupervisorCycleInner(
+  settings: Settings,
+  extensionAvailable: boolean,
+  onProgress: ((status: string) => void) | undefined,
+  signal: AbortSignal,
+): Promise<SupervisorResult> {
+  signal.throwIfAborted();
   const provider = (settings.llmDefaultProvider || 'anthropic') as LLMProvider;
   const model = settings.llmDefaultModel || 'claude-sonnet-4-6';
   const serverConnected = !!settings.serverUrl;
@@ -194,7 +204,8 @@ export async function runSupervisorCycle(
   onProgress?.('Preparing supervisor...');
 
   // Ensure supervisor investigation exists
-  const supervisorFolder = await ensureSupervisorFolder();
+  const supervisorFolder = await ensureSupervisorFolder(signal);
+  signal.throwIfAborted();
 
   // Ensure audit trail thread
   let threadId = supervisorFolder.agentThreadId;
@@ -214,14 +225,20 @@ export async function runSupervisorCycle(
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-    await db.chatThreads.add(thread);
-    await db.folders.update(supervisorFolder.id, { agentThreadId: threadId });
+    await db.transaction('rw', [db.chatThreads, db.folders], async () => {
+      signal.throwIfAborted();
+      await db.chatThreads.add(thread);
+      signal.throwIfAborted();
+      await db.folders.update(supervisorFolder.id, { agentThreadId: thread.id });
+      signal.throwIfAborted();
+    });
   }
 
   // Check how many active investigations there are — skip if only 0-1
   const activeFolders = await db.folders
     .filter(f => f.status !== 'archived' && !f.name.startsWith('CaddyAgent') && f.name !== SUPERVISOR_FOLDER_NAME)
     .count();
+  signal.throwIfAborted();
 
   if (activeFolders < 2) {
     return { findings: ['Skipped: fewer than 2 active investigations to compare.'], escalations: [] };
@@ -243,15 +260,21 @@ export async function runSupervisorCycle(
         toTrashIds.push(n.id);
       });
     if (toTrashIds.length > 0) {
+      signal.throwIfAborted();
       const now = Date.now();
-      await db.notes.where('id').anyOf(toTrashIds).modify({ trashed: true, trashedAt: now, updatedAt: now });
+      await db.notes.where('id').anyOf(toTrashIds).modify(note => {
+        signal.throwIfAborted();
+        Object.assign(note, { trashed: true, trashedAt: now, updatedAt: now });
+      });
       onProgress?.(`Retention: trashed ${toTrashIds.length} old supervisor notes`);
     }
   } catch (retErr) {
+    signal.throwIfAborted();
     console.warn('[supervisor] retention sweep failed:', retErr);
   }
 
   const systemPrompt = SUPERVISOR_SYSTEM_PROMPT + await buildInvestigationContext(supervisorFolder);
+  signal.throwIfAborted();
 
   const messages: { role: 'user' | 'assistant'; content: string | ContentBlock[] }[] = [
     { role: 'user', content: 'Run your cross-investigation analysis cycle. List investigations, compare them for shared IOCs and patterns, identify stale cases, and write a summary note with your findings.' },
@@ -263,6 +286,7 @@ export async function runSupervisorCycle(
 
   try {
     for (let turn = 0; turn < MAX_SUPERVISOR_TURNS; turn++) {
+      signal.throwIfAborted();
       onProgress?.(`Supervisor thinking (turn ${turn + 1})...`);
 
       const response = await callLLM({
@@ -271,7 +295,9 @@ export async function runSupervisorCycle(
         tools: SUPERVISOR_TOOL_DEFS,
         useServerProxy,
         endpoint,
+        signal,
       });
+      signal.throwIfAborted();
 
       // Log to audit thread
       const assistantMsg: ChatMessage = {
@@ -281,6 +307,7 @@ export async function runSupervisorCycle(
         createdAt: Date.now(),
       };
       await db.chatThreads.where('id').equals(threadId).modify((t: ChatThread) => {
+        signal.throwIfAborted();
         t.messages.push(assistantMsg);
         t.updatedAt = Date.now();
       });
@@ -291,12 +318,13 @@ export async function runSupervisorCycle(
 
       if (response.toolCalls.length === 0) break;
 
-      // Execute all tool calls (supervisor only uses read tools + create_note)
+      // Authorize every returned call independently of the model-visible tools.
       const toolResults: ContentBlock[] = [];
       const assistantContent: ContentBlock[] = [];
       if (response.content) assistantContent.push({ type: 'text', text: response.content });
 
       for (const toolCall of response.toolCalls) {
+        signal.throwIfAborted();
         assistantContent.push(toolCall);
         onProgress?.(`Executing ${toolCall.name}...`);
 
@@ -313,7 +341,43 @@ export async function runSupervisorCycle(
           continue;
         }
 
-        const result = await executeTool(toolCall, supervisorFolder.id);
+        const permission = await getSupervisorToolPermission(toolCall, supervisorFolder.id);
+        signal.throwIfAborted();
+        let result: ToolExecutionResult;
+        if (permission.kind === 'denied') {
+          result = toolExecutionError(permission.error);
+        } else if (permission.kind === 'approval-required') {
+          await db.transaction('rw', db.agentActions, async () => {
+            signal.throwIfAborted();
+            await queueAgentAction({
+              investigationId: permission.investigationId,
+              threadId,
+              agentConfigId: SUPERVISOR_ACTION_PROFILE,
+              toolName: toolCall.name,
+              toolInput: toolCall.input as Record<string, unknown>,
+              rationale: response.content || 'Supervisor proposed action',
+              severity: 'warning',
+            });
+            signal.throwIfAborted();
+          });
+          result = { result: JSON.stringify({ status: 'pending_approval', message: 'This action requires analyst approval and has been queued for review.' }), isError: false };
+        } else {
+          result = await executeTool(toolCall, supervisorFolder.id, undefined, {
+            allowedTools: SUPERVISOR_TOOLS,
+            validateScope: call => validateSupervisorDispatch(call, supervisorFolder.id),
+            signal,
+          });
+          if (isWriteTool(toolCall.name)) {
+            await db.agentActions.add({
+              id: nanoid(), investigationId: permission.investigationId, threadId, agentConfigId: SUPERVISOR_ACTION_PROFILE,
+              toolName: toolCall.name, toolInput: toolCall.input as Record<string, unknown>,
+              rationale: response.content || 'Supervisor action approved by investigation policy',
+              status: result.isError ? 'failed' : 'executed', resultSummary: result.result.substring(0, 500),
+              createdAt: Date.now(), executedAt: Date.now(),
+            });
+          }
+        }
+        // Count queued notes too so later approval cannot exceed the cycle quota.
         if (toolCall.name === 'create_note' && !result.isError) {
           notesCreatedThisCycle++;
         }
@@ -365,19 +429,12 @@ async function buildInvestigationContext(folder: Folder): Promise<string> {
 
 /**
  * Send a desktop notification via the Chrome extension.
- * Falls back silently if extension is not available.
+ * A rejected or unavailable desktop notification produces an in-app fallback.
  */
-export function sendEscalationNotification(escalation: EscalationEvent): void {
-  try {
-    window.postMessage({
-      type: 'TC_SEND_NOTIFICATION',
-      payload: {
-        title: `CaddyAgent: ${escalation.title}`.substring(0, 200),
-        message: escalation.detail.substring(0, 500),
-        severity: escalation.severity,
-      },
-    }, postMessageOrigin());
-  } catch {
-    // Extension not available — silently fail
-  }
+export function sendEscalationNotification(escalation: EscalationEvent, signal?: AbortSignal): void {
+  void notifyDesktop({
+    title: ('CaddyAgent: ' + escalation.title).substring(0, 200),
+    message: escalation.detail.substring(0, 500),
+    severity: escalation.severity,
+  }, signal);
 }

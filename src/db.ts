@@ -1,9 +1,13 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type { Note, Task, Folder, Tag, TimelineEvent, Timeline, Whiteboard, ActivityLogEntry, StandaloneIOC, EvidenceItem, Asset, CaseUpdate, ChatThread, NoteTemplate, PlaybookTemplate, Checkpoint, CustomSlashCommand, AgentAction, AgentProfile, AgentDeployment, AgentMeeting, EvidenceKind, EvidenceExtractionStatus } from './types';
 import type { IntegrationTemplate, InstalledIntegration, IntegrationRun } from './types/integration-types';
-import { installEncryptionMiddleware } from './lib/encryptionMiddleware';
+import { getSessionKey, installEncryptionMiddleware } from './lib/encryptionMiddleware';
+import { installSyncOutbox } from './lib/sync-outbox';
+import { isEncryptionEnabled } from './lib/encryptionStore';
+import { suppressSyncInCurrentTransaction } from './lib/sync-state';
+import { getWorkspaceDatabaseName } from './lib/workspace-profiles';
 
-const db = new Dexie('ThreatCaddyDB') as Dexie & {
+const db = new Dexie(getWorkspaceDatabaseName()) as Dexie & {
   notes: EntityTable<Note, 'id'>;
   tasks: EntityTable<Task, 'id'>;
   folders: EntityTable<Folder, 'id'>;
@@ -39,20 +43,10 @@ db.version(1).stores({
 
 db.version(2).stores({
   notes: 'id, title, folderId, pinned, archived, trashed, createdAt, updatedAt, *tags, *iocTypes',
-}).upgrade((tx) => {
-  return tx.table('notes').toCollection().modify((note) => {
-    if (!note.iocTypes) {
-      note.iocTypes = [];
-    }
-  });
 });
 
 db.version(3).stores({
   tasks: 'id, title, folderId, status, priority, completed, order, createdAt, updatedAt, *tags, *iocTypes',
-}).upgrade((tx) => {
-  return tx.table('tasks').toCollection().modify((task) => {
-    if (!task.iocTypes) task.iocTypes = [];
-  });
 });
 
 db.version(4).stores({
@@ -62,22 +56,6 @@ db.version(4).stores({
 db.version(5).stores({
   timelines: 'id, name, order, createdAt',
   timelineEvents: 'id, timestamp, eventType, source, starred, folderId, timelineId, createdAt, updatedAt, *tags',
-}).upgrade(async (tx) => {
-  const { nanoid } = await import('nanoid');
-  const defaultId = nanoid();
-  const now = Date.now();
-  await tx.table('timelines').add({
-    id: defaultId,
-    name: 'Default',
-    order: 0,
-    createdAt: now,
-    updatedAt: now,
-  });
-  await tx.table('timelineEvents').toCollection().modify((event: Record<string, unknown>) => {
-    if (!event.timelineId) {
-      event.timelineId = defaultId;
-    }
-  });
 });
 
 db.version(6).stores({
@@ -90,10 +68,6 @@ db.version(7).stores({
 
 db.version(8).stores({
   timelineEvents: 'id, timestamp, eventType, source, starred, folderId, timelineId, createdAt, updatedAt, *tags, *iocTypes',
-}).upgrade((tx) => {
-  return tx.table('timelineEvents').toCollection().modify((event) => {
-    if (!event.iocTypes) event.iocTypes = [];
-  });
 });
 
 // Version 9: entity linking fields (optional arrays, no index changes needed)
@@ -113,10 +87,6 @@ db.version(13).stores({
   tasks: 'id, title, folderId, status, priority, completed, trashed, archived, order, createdAt, updatedAt, *tags, *iocTypes',
   timelineEvents: 'id, timestamp, eventType, source, starred, trashed, archived, folderId, timelineId, createdAt, updatedAt, *tags, *iocTypes',
   whiteboards: 'id, name, folderId, trashed, archived, order, createdAt, updatedAt, *tags',
-}).upgrade(tx => {
-  tx.table('tasks').toCollection().modify(t => { if (t.trashed === undefined) { t.trashed = false; t.archived = false; } });
-  tx.table('timelineEvents').toCollection().modify(e => { if (e.trashed === undefined) { e.trashed = false; e.archived = false; } });
-  tx.table('whiteboards').toCollection().modify(w => { if (w.trashed === undefined) { w.trashed = false; w.archived = false; } });
 });
 
 // Version 14: standalone IOCs table
@@ -220,7 +190,32 @@ db.version(28).stores({
 // migration never destroys analyst-authored data.
 db.version(29).stores({
   evidenceItems: 'id, title, folderId, fileName, importedAt, createdAt, updatedAt, trashed, archived, *tags, [folderId+updatedAt]',
-}).upgrade(async (tx) => {
+});
+
+// Version 30: keep the notes-first evidence bridge non-destructive.
+// Earlier handoff builds removed notes here; this migration only deduplicates
+// evidenceItems where identity metadata is strong enough.
+db.version(30).stores({
+  evidenceItems: 'id, title, folderId, fileName, importedAt, createdAt, updatedAt, trashed, archived, *tags, [folderId+updatedAt]',
+});
+
+// Version 31 reruns the non-destructive cleanup for browsers that already
+// reached the previous v30 bridge build.
+db.version(31).stores({
+  evidenceItems: 'id, title, folderId, fileName, importedAt, createdAt, updatedAt, trashed, archived, *tags, [folderId+updatedAt]',
+});
+
+// Version 32 is intentionally non-destructive. It restores ordinary analyst
+// notes when possible but does not remove evidenceItems during migration.
+db.version(32).stores({
+  evidenceItems: 'id, title, folderId, fileName, importedAt, createdAt, updatedAt, trashed, archived, *tags, [folderId+updatedAt]',
+});
+
+
+/** Schema upgrades never inspect content or require an encryption key. */
+db.version(33).stores({ _localMigrations: 'key' });
+
+async function promoteLegacyEvidence(tx: Parameters<NonNullable<Parameters<ReturnType<typeof db.version>['upgrade']>[0]>>[0]) {
   const notesTable = tx.table('notes');
   const evidenceTable = tx.table('evidenceItems');
   const legacyNotes = await notesTable
@@ -268,59 +263,61 @@ db.version(29).stores({
     };
   });
 
-  await evidenceTable.bulkPut(evidenceItems);
-});
+  for (const item of evidenceItems) if (!(await evidenceTable.get(item.id))) await evidenceTable.add(item);
+}
 
-// Version 30: keep the notes-first evidence bridge non-destructive.
-// Earlier handoff builds removed notes here; this migration only deduplicates
-// evidenceItems where identity metadata is strong enough.
-db.version(30).stores({
-  evidenceItems: 'id, title, folderId, fileName, importedAt, createdAt, updatedAt, trashed, archived, *tags, [folderId+updatedAt]',
-}).upgrade(async (tx) => {
-  await cleanupEvidenceNoteCopies(tx);
-});
+/** Content conversion is explicit, keyed, resumable and atomic after structural open. */
+export async function runWorkspaceContentMigrations(): Promise<void> {
+  if (isEncryptionEnabled() && !getSessionKey()) throw new Error('Unlock the workspace before converting stored content.');
+  await db.transaction('rw', ['notes', 'tasks', 'timelineEvents', 'timelines', 'whiteboards', 'evidenceItems', '_localMigrations'], async tx => {
+    suppressSyncInCurrentTransaction();
+    const markers = tx.table('_localMigrations');
+    if (await markers.get('content-v1')) return;
+    for (const name of ['notes', 'tasks', 'timelineEvents']) {
+      await tx.table(name).filter(row => !row.iocTypes).modify({ iocTypes: [] });
+    }
+    for (const name of ['tasks', 'timelineEvents', 'whiteboards']) {
+      await tx.table(name).filter(row => row.trashed === undefined || row.archived === undefined)
+        .modify(row => { row.trashed ??= false; row.archived ??= false; });
+    }
+    const unassigned = await tx.table('timelineEvents').filter(row => !row.timelineId).toArray();
+    if (unassigned.length) {
+      const timelines = tx.table('timelines');
+      let timeline = await timelines.toCollection().first();
+      if (!timeline) {
+        timeline = { id: crypto.randomUUID(), name: 'Default', order: 0, createdAt: Date.now(), updatedAt: Date.now() };
+        await timelines.add(timeline);
+      }
+      for (const event of unassigned) await tx.table('timelineEvents').update(event.id, { timelineId: timeline.id });
+    }
+    await promoteLegacyEvidence(tx);
+    await cleanupEvidenceNoteCopies(tx);
+    await restoreFalsePositiveEvidenceNotes(tx);
+    await markers.add({ key: 'content-v1', completedAt: Date.now() });
+  });
+}
 
-// Version 31 reruns the non-destructive cleanup for browsers that already
-// reached the previous v30 bridge build.
-db.version(31).stores({
-  evidenceItems: 'id, title, folderId, fileName, importedAt, createdAt, updatedAt, trashed, archived, *tags, [folderId+updatedAt]',
-}).upgrade(async (tx) => {
-  await cleanupEvidenceNoteCopies(tx);
-});
-
-// Version 32 is intentionally non-destructive. It restores ordinary analyst
-// notes when possible but does not remove evidenceItems during migration.
-db.version(32).stores({
-  evidenceItems: 'id, title, folderId, fileName, importedAt, createdAt, updatedAt, trashed, archived, *tags, [folderId+updatedAt]',
-}).upgrade(async (tx) => {
-  await restoreFalsePositiveEvidenceNotes(tx);
-});
-
-// Version 33: asset management (CMDB) inventory.
+// Version 34: asset management (CMDB) inventory.
 // Global table — assets are org-wide, not investigation-scoped, so there is no
-// folderId index. `*linkedFolderIds` gives reverse lookup from an investigation.
-db.version(33).stores({
-  assets: 'id, externalId, name, hostname, primaryIp, macAddress, serialNumber, assetType, status, importedAt, trashed, archived, createdAt, updatedAt, *tags, *ipAddresses, *macAddresses, *linkedFolderIds',
-});
-
-// Version 34: index operatingSystem for attack-surface roll-ups that group the
-// inventory by OS without loading every configuration item into memory.
+// folderId index. `*linkedFolderIds` gives reverse lookup from an investigation;
+// operatingSystem, owner and customerName serve the attack-surface roll-ups and
+// MSSP/customer scoping without scanning the whole inventory in memory.
 db.version(34).stores({
-  assets: 'id, externalId, name, hostname, primaryIp, macAddress, serialNumber, assetType, status, operatingSystem, importedAt, trashed, archived, createdAt, updatedAt, *tags, *ipAddresses, *macAddresses, *linkedFolderIds',
-});
-
-// Version 35: index owner + customerName so MSSP/customer scoping filters
-// through IndexedDB rather than scanning the whole inventory in memory.
-db.version(35).stores({
   assets: 'id, externalId, name, hostname, primaryIp, macAddress, serialNumber, assetType, status, operatingSystem, owner, customerName, importedAt, trashed, archived, createdAt, updatedAt, *tags, *ipAddresses, *macAddresses, *linkedFolderIds',
 });
 
-// Version 36: incident response case log.
+// Version 35: incident response case log.
 // Indexed by folderId+createdAt so a case log loads in chronological order
 // without scanning every update in every investigation.
-db.version(36).stores({
+db.version(35).stores({
   caseUpdates: 'id, folderId, type, phase, createdAt, updatedAt, [folderId+createdAt]',
 });
+
+// Version 37: browsers that ran the asset-management branch before it merged
+// upstream's v33 already sit at v36 (assets and the case log, but no
+// _localMigrations). Declaring the table again gives them the missing store;
+// for every other browser this version is a no-op.
+db.version(37).stores({ _localMigrations: 'key' });
 
 function evidenceKindFromExtension(value: string): EvidenceKind {
   const lower = value.toLowerCase();
@@ -819,5 +816,6 @@ function looksLikeReadableMigratedEvidenceText(value: string): boolean {
 
 // Encryption-at-rest middleware (transparent to all CRUD hooks)
 installEncryptionMiddleware(db);
+installSyncOutbox(db);
 
 export { db };
