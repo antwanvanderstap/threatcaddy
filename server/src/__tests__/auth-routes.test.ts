@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+const teamQueue = vi.hoisted(() => ({ share: vi.fn(async () => 0) }));
+vi.mock('../services/team-queue.js', () => ({ shareTeamQueue: teamQueue.share }));
 import { Hono } from 'hono';
 
 const sessionMocks = vi.hoisted(() => ({

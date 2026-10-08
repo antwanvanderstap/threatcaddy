@@ -32,6 +32,7 @@ import adminRoutes from './routes/admin/index.js';
 import { botManager } from './bots/bot-manager.js';
 import { prePullSandboxImages } from './bots/sandbox.js';
 import { initAdminSecret, initRegistrationMode, initServerName, getServerName, backfillFolderOwners, initAdminSystemUser } from './services/admin-secret.js';
+import { shareTeamQueue } from './services/team-queue.js';
 import { pruneOldData } from './services/cleanup-service.js';
 import { initAdminKey } from './middleware/admin-auth.js';
 import { handleWSConnection, handleWSMessage, handleWSClose } from './ws/handler.js';
@@ -268,6 +269,8 @@ async function main() {
   await initRegistrationMode();
   await initServerName();
   await backfillFolderOwners();
+  const teamQueueRows = await shareTeamQueue(db);
+  if (teamQueueRows > 0) logger.info('Team queue memberships brought up to date', { rows: teamQueueRows });
 
   // No public or admin listener is ready until runtime initialization settles.
   await botManager.init();

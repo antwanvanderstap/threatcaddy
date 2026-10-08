@@ -8,6 +8,7 @@ import { users } from '../db/schema.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getRegistrationMode, ADMIN_SYSTEM_USER_ID } from '../services/admin-secret.js';
 import { logActivity } from '../services/audit-service.js';
+import { shareTeamQueue } from '../services/team-queue.js';
 import { isLocked, recordFailedAttempt, resetAttempts } from '../services/login-limiter.js';
 import type { AuthUser } from '../types.js';
 import { ErrorCodes } from '../types/error-codes.js';
@@ -84,6 +85,7 @@ app.post('/register', async (c) => {
     updatedAt: now,
   });
 
+  await shareTeamQueue(db, { userId });
   const user: AuthUser = { id: userId, email, role, displayName, avatarUrl: null };
   const tokens = await createTokenPair(user.id, passwordHash);
 

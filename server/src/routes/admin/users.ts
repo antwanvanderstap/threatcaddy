@@ -7,6 +7,7 @@ import {
   requireAdminAuth, logger, logAdminAction, getAdminId,
 } from './shared.js';
 import { changeAdminSecret } from '../../services/admin-secret.js';
+import { shareTeamQueue } from '../../services/team-queue.js';
 import { revokeUserSessions, revokeAllSessions, updateUsersAndRevokeSessions } from '../../services/session-service.js';
 
 const app = new Hono();
@@ -57,8 +58,10 @@ app.patch('/api/users/:id', requireAdminAuth, async (c) => {
     await logAdminAction(getAdminId(c), 'user.toggle-active', `${body.active ? 'Activated' : 'Deactivated'} ${target.email}`, { itemId: id });
   }
 
-  if (body.role !== undefined || body.active !== undefined) await updateUsersAndRevokeSessions([id], updates);
-  else await db.update(users).set(updates).where(eq(users.id, id));
+  if (body.role !== undefined || body.active !== undefined) {
+    await updateUsersAndRevokeSessions([id], updates);
+    await shareTeamQueue(db, { userId: id });
+  } else await db.update(users).set(updates).where(eq(users.id, id));
 
   return c.json({ ok: true });
 });
@@ -119,6 +122,7 @@ app.post('/api/users', requireAdminAuth, async (c) => {
     updatedAt: now,
   });
 
+  await shareTeamQueue(db, { userId });
   await logAdminAction(getAdminId(c), 'user.create', `Created user ${trimmedEmail} with role ${userRole}`, { itemId: userId });
 
   return c.json({ ok: true, user: { id: userId, email: trimmedEmail, displayName: displayName.trim(), role: userRole } }, 201);
@@ -163,6 +167,7 @@ app.post('/api/users/bulk', requireAdminAuth, async (c) => {
 
   const result = await updateUsersAndRevokeSessions(validIds, updates);
   const affected = result.length;
+  if (action !== 'disable') for (const userId of validIds) await shareTeamQueue(db, { userId });
 
   await logAdminAction(getAdminId(c), 'user.bulk', `Bulk ${action} on ${affected} user(s)${action === 'changeRole' ? ` to ${role}` : ''}`);
 

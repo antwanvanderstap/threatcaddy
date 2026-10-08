@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+const teamQueue = vi.hoisted(() => ({ share: vi.fn(async () => 0) }));
+vi.mock('../services/team-queue.js', () => ({ shareTeamQueue: teamQueue.share }));
 import { Hono } from 'hono';
 
 // HTTP handlers mock current identity lookup; real PostgreSQL account invalidation is covered by integration tests.
@@ -299,6 +301,7 @@ describe('PATCH /admin/api/users/:id', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
+    expect(teamQueue.share).toHaveBeenCalledOnce();
   });
 
   it('updates user role to admin', async () => {
@@ -484,6 +487,7 @@ describe('POST /admin/api/users', () => {
     expect(body.user.email).toBe('newuser@example.com');
     expect(body.user.displayName).toBe('New User');
     expect(body.user.role).toBe('analyst');
+    expect(teamQueue.share).toHaveBeenCalledWith(expect.anything(), { userId: 'new-user-id' });
   });
 
   it('defaults role to analyst when invalid role is provided', async () => {
@@ -726,6 +730,7 @@ describe('POST /admin/api/users/bulk', () => {
     const body = await res.json();
     expect(body.ok).toBe(true);
     expect(body.affected).toBe(2);
+    expect(teamQueue.share).toHaveBeenCalled();
   });
 
   it('bulk disable users', async () => {
@@ -742,6 +747,7 @@ describe('POST /admin/api/users/bulk', () => {
     const body = await res.json();
     expect(body.ok).toBe(true);
     expect(body.affected).toBe(2);
+    expect(teamQueue.share).not.toHaveBeenCalled();
   });
 
   it('bulk change role', async () => {

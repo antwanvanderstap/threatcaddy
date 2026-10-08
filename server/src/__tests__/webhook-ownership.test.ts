@@ -1,11 +1,13 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+const teamQueue = vi.hoisted(() => ({ share: vi.fn(async () => 0) }));
+vi.mock('../services/team-queue.js', () => ({ shareTeamQueue: teamQueue.share }));
 import { Hono } from 'hono';
 
 const mocks = vi.hoisted(() => {
   const oldSecret = process.env.WEBHOOK_INGEST_SECRET;
   const oldOwner = process.env.WEBHOOK_INGEST_OWNER_ID;
   process.env.WEBHOOK_INGEST_SECRET = 'synthetic-ingest-secret';
-  return { oldSecret, oldOwner, results: [] as unknown[][], committed: [] as Array<{ table: unknown; values: Record<string, unknown> | unknown[] }>, updated: [] as Array<{ table: unknown; set: Record<string, unknown> }>, team: [] as Array<{ id: string; email: string }>, failTable: undefined as unknown, txOwner: {} as Record<string, unknown>, access: vi.fn(), transaction: vi.fn() };
+  return { oldSecret, oldOwner, results: [] as unknown[][], committed: [] as Array<{ table: unknown; values: Record<string, unknown> | unknown[] }>, updated: [] as Array<{ table: unknown; set: Record<string, unknown> }>, failTable: undefined as unknown, txOwner: {} as Record<string, unknown>, access: vi.fn(), transaction: vi.fn() };
 });
 vi.mock('../middleware/access.js', () => ({ checkInvestigationAccess: mocks.access }));
 vi.mock('../lib/logger.js', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
@@ -24,15 +26,15 @@ const request = (body: unknown = { source: 'synthetic', title: 'Owned alert', io
 const owner = { id: 'owner-a', active: true, role: 'analyst', email: 'owner@example.invalid' };
 
 beforeEach(() => {
-  vi.clearAllMocks(); mocks.results.length = 0; mocks.committed.length = 0; mocks.updated.length = 0; mocks.team = []; mocks.failTable = undefined;
+  vi.clearAllMocks(); mocks.results.length = 0; mocks.committed.length = 0; mocks.updated.length = 0; mocks.failTable = undefined;
   process.env.WEBHOOK_INGEST_OWNER_ID = owner.id; mocks.txOwner = owner;
   mocks.access.mockResolvedValue(true);
   mocks.transaction.mockImplementation(async callback => {
     const staged: typeof mocks.committed = [];
     const stagedUpdates: typeof mocks.updated = [];
     await callback({
-      // Owner revalidation locks with FOR SHARE; the team lookup is awaited directly.
-      select: () => ({ from: () => ({ where: () => ({ for: async () => [mocks.txOwner], then: (resolve: (rows: unknown[]) => unknown) => resolve(mocks.team) }) }) }),
+      // Owner revalidation locks with FOR SHARE.
+      select: () => ({ from: () => ({ where: () => ({ for: async () => [mocks.txOwner] }) }) }),
       insert: (table: unknown) => ({ values: (values: Record<string, unknown> | unknown[]) => {
         const write = (async () => {
           if (table === mocks.failTable) throw new Error('Synthetic membership failure');
@@ -97,16 +99,16 @@ describe('webhook investigation ownership', () => {
     expect(mocks.transaction).not.toHaveBeenCalled();
   });
 
-  it('shares a created incident with the active team as editors, never with bot accounts', async () => {
+  it('shares a created incident with the team queue inside the ingest transaction', async () => {
     mocks.results.push([owner]);
-    mocks.team = [{ id: 'analyst-b', email: 'b@example.invalid' }, { id: 'bot-1', email: 'bot-1@threatcaddy.internal' }];
     const response = await request({ source: 'synthetic', title: 'Team alert', externalRef: { system: 'ticketing', id: '42' }, detectedAt: '2026-10-02T12:00:00Z' });
     expect(response.status).toBe(200);
-    expect(mocks.committed.map(write => write.table)).toEqual([folders, investigationMembers, investigationMembers, notes]);
+    const { investigationId } = await response.json();
+    expect(mocks.committed.map(write => write.table)).toEqual([folders, investigationMembers, notes]);
     expect(mocks.committed[0].values).toMatchObject({ severity: 'medium', irPhase: 'triage', externalRefs: { ticketing: '42' }, detectedAt: new Date('2026-10-02T12:00:00Z') });
-    expect(mocks.committed[2].values).toEqual([expect.objectContaining({ userId: 'analyst-b', role: 'editor' })]);
+    expect(teamQueue.share).toHaveBeenCalledOnce();
+    expect(teamQueue.share).toHaveBeenCalledWith(expect.objectContaining({ insert: expect.any(Function) }), { folderId: investigationId });
   });
-
   it('appends only the case log when an external ref was already ingested', async () => {
     mocks.results.push([owner], [{ id: 'inv-1', irPhase: 'containment', externalRefs: { ticketing: '42' } }]);
     const response = await request({ source: 'synthetic', title: 'Repeat', externalRef: { system: 'ticketing', id: '42' }, caseUpdate: { body: 'Ticket closed' } });
@@ -117,6 +119,7 @@ describe('webhook investigation ownership', () => {
     // Unattributed on purpose: the case-updates feed lists analyst-written entries only.
     expect(mocks.committed[0].values).not.toHaveProperty('createdBy');
     expect(mocks.updated).toEqual([]);
+    expect(teamQueue.share).not.toHaveBeenCalled();
   });
 
   it('adds refs an investigation lacks without overwriting one it has', async () => {

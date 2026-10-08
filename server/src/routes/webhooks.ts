@@ -41,9 +41,10 @@ import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import { db } from '../db/index.js';
 import { folders, notes, standaloneIOCs, caseUpdates, users, investigationMembers } from '../db/schema.js';
-import { eq, and, gt, inArray, isNull, isNotNull, ne, sql } from 'drizzle-orm';
+import { eq, and, gt, isNull, isNotNull, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger.js';
 import { checkInvestigationAccess } from '../middleware/access.js';
+import { shareTeamQueue } from '../services/team-queue.js';
 import { HANDOFF_UNAVAILABLE } from '../bots/handoff-policy.js';
 import { timingSafeEqual, createHmac } from 'node:crypto';
 
@@ -291,16 +292,8 @@ app.post('/ingest', async (c) => {
           createdBy: ownerId, updatedBy: ownerId, createdAt: now, updatedAt: now,
         });
         await tx.insert(investigationMembers).values({ id: nanoid(), folderId, userId: ownerId, role: 'owner', joinedAt: now });
-        // Ingested incidents are the team's queue: every active analyst and
-        // administrator can work them, not only the configured owner.
-        const team = await tx.select({ id: users.id, email: users.email }).from(users)
-          .where(and(eq(users.active, true), inArray(users.role, ['admin', 'analyst']), ne(users.id, ownerId)));
-        const humans = team.filter(u => !u.email.endsWith('@threatcaddy.internal'));
-        if (humans.length > 0) {
-          await tx.insert(investigationMembers)
-            .values(humans.map(u => ({ id: nanoid(), folderId, userId: u.id, role: 'editor' as const, joinedAt: now })))
-            .onConflictDoNothing();
-        }
+        // Ingested incidents are the team's queue: every active user sees them.
+        await shareTeamQueue(tx, { folderId });
       } else if (Object.keys(missingRefs).length > 0) {
         await tx.update(folders)
           .set({
