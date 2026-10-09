@@ -33,9 +33,11 @@ function writeCache(serverUrl: string | null, types: IncidentType[]) {
 
 /**
  * Team-wide incident types from the team server. Cached per server so
- * layouts still render offline; refreshed on connect, on window focus and
- * every few minutes, since admins edit them from other browsers. Without a
- * server there are no types and every investigation uses the default layout.
+ * layouts still render offline. The caller runs `reload` once sync is ready
+ * (the API client is configured then, not yet when `connected` flips); after
+ * that they refresh on window focus and every few minutes, since admins edit
+ * them from other browsers. Without a server there are no types and every
+ * investigation uses the default layout.
  */
 export function useIncidentTypes(connected: boolean, serverUrl: string | null) {
   const [types, setTypes] = useState<IncidentType[]>(() => readCache(serverUrl));
@@ -64,7 +66,6 @@ export function useIncidentTypes(connected: boolean, serverUrl: string | null) {
 
   useEffect(() => {
     if (!connected) return;
-    void reload();
     const timer = setInterval(() => { void reload(); }, REFRESH_MS);
     const onFocus = () => { void reload(); };
     window.addEventListener('focus', onFocus);

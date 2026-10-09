@@ -323,19 +323,22 @@ export function LayoutEditor({ layout, disabled, onChange }: { layout: IncidentL
               onDragEnd={() => setDrag(null)}
               onDragOver={(e) => { if (drag && !disabled) e.preventDefault(); }}
               onDrop={(e) => { e.preventDefault(); dropOn(tab.id, i); }}
-              className={cn('flex items-center gap-1.5 rounded-lg border border-gray-700 bg-gray-800/60 px-2 py-1.5 text-xs min-w-0',
+              className={cn('rounded-lg border border-gray-700 bg-gray-800/60 px-2 py-1.5 text-xs min-w-0 space-y-1.5',
                 s.width === 'full' && 'col-span-2',
                 drag?.tabId === tab.id && drag.index === i && 'opacity-40')}
             >
-              {!disabled && <GripVertical size={12} className="shrink-0 text-gray-500 cursor-grab" />}
-              <span className={cn('flex-1 truncate', known ? 'text-gray-200' : 'text-gray-500 italic')} title={s.id}>
-                {known ? t(`summary.section.${s.id}`) : t('incidentTypes.unknownSection', { id: s.id })}
-              </span>
+              <div className="flex items-center gap-1.5 min-w-0">
+                {!disabled && <GripVertical size={12} className="shrink-0 text-gray-500 cursor-grab" />}
+                <span className={cn('flex-1 truncate', known ? 'text-gray-200' : 'text-gray-500 italic')} title={s.id}>
+                  {known ? t(`summary.section.${s.id}`) : t('incidentTypes.unknownSection', { id: s.id })}
+                </span>
+                <span className="shrink-0 text-[10px] text-gray-500">{s.width === 'full' ? t('incidentTypes.full') : t('incidentTypes.half')}</span>
+              </div>
               {!disabled && (
-                <>
+                <div className="flex flex-wrap items-center gap-1">
                   <button type="button" className={small} onClick={() => onChange(setSectionWidth(layout, tab.id, i, s.width === 'full' ? 'half' : 'full'))}
-                    aria-label={t('incidentTypes.toggleWidth')} title={t('incidentTypes.toggleWidth')}>
-                    {s.width === 'full' ? t('incidentTypes.full') : t('incidentTypes.half')}
+                    title={t('incidentTypes.toggleWidth')}>
+                    {s.width === 'full' ? t('incidentTypes.makeHalf') : t('incidentTypes.makeFull')}
                   </button>
                   <button type="button" className={small} disabled={i === 0} onClick={() => onChange(moveSection(layout, tab.id, i, tab.id, i - 1))} aria-label={t('incidentTypes.moveUp')}><ArrowUp size={12} /></button>
                   <button type="button" className={small} disabled={i === tab.sections.length - 1} onClick={() => onChange(moveSection(layout, tab.id, i, tab.id, i + 1))} aria-label={t('incidentTypes.moveDown')}><ArrowDown size={12} /></button>
@@ -344,14 +347,14 @@ export function LayoutEditor({ layout, disabled, onChange }: { layout: IncidentL
                       value=""
                       aria-label={t('incidentTypes.moveToTab')}
                       onChange={(e) => { if (e.target.value) onChange(moveSection(layout, tab.id, i, e.target.value, Number.MAX_SAFE_INTEGER)); }}
-                      className="bg-gray-800 border border-gray-700 rounded px-1 py-1 text-[11px] text-gray-300 max-w-[5.5rem]"
+                      className="bg-gray-800 border border-gray-700 rounded px-1 py-1 text-[11px] text-gray-300"
                     >
                       <option value="">{t('incidentTypes.moveToTab')}</option>
                       {layout.tabs.filter((x) => x.id !== tab.id).map((x) => <option key={x.id} value={x.id}>{x.title}</option>)}
                     </select>
                   )}
-                  <button type="button" className={cn(small, 'text-red-400')} onClick={() => onChange(removeSection(layout, tab.id, i))} aria-label={t('incidentTypes.removeSection')}><X size={12} /></button>
-                </>
+                  <button type="button" className={cn(small, 'text-red-400 ms-auto')} onClick={() => onChange(removeSection(layout, tab.id, i))} aria-label={t('incidentTypes.removeSection')}><X size={12} /></button>
+                </div>
               )}
             </li>
           );

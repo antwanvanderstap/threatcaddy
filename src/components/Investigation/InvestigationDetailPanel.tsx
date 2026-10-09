@@ -539,8 +539,8 @@ export function InvestigationDetailPanel({
 
           {/* Timestamps */}
           <div className="flex gap-4 text-xs text-gray-500 pt-2 border-t border-gray-800">
-            <span>{t('detail.created')} {formatFullDate(folder.createdAt)}</span>
-            {folder.updatedAt && <span>{t('detail.updated')} {formatFullDate(folder.updatedAt)}</span>}
+            <span>{t('detail.created', { date: formatFullDate(folder.createdAt) })}</span>
+            {folder.updatedAt && <span>{t('detail.updated', { date: formatFullDate(folder.updatedAt) })}</span>}
           </div>
         </div>
       </div>

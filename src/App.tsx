@@ -158,6 +158,12 @@ function AppDataLayer() {
   // ─── Team Server Integration ───────────────────────────────────
   const auth = useAuth();
   const { remoteInvestigations, loading: remoteLoading, refresh: refreshRemote } = useRemoteInvestigations(auth.connected, auth.serverUrl ?? undefined);
+  const incidentTypesHook = useIncidentTypes(auth.connected, auth.serverUrl);
+  const reloadIncidentTypes = incidentTypesHook.reload;
+  const handleSyncPullComplete = useCallback(() => {
+    refreshRemote();
+    void reloadIncidentTypes();
+  }, [refreshRemote, reloadIncidentTypes]);
 
   const handleFolderInvite = useCallback(() => {
     refreshRemote();
@@ -174,7 +180,7 @@ function AppDataLayer() {
     chats: chatsHook.reload,
     folders: reloadFolders,
     tags: reloadTags,
-    onSyncPullComplete: refreshRemote,
+    onSyncPullComplete: handleSyncPullComplete,
   }, handleFolderInvite);
 
   /** Reload every data hook — use after bulk operations that touch multiple tables. */
@@ -268,6 +274,7 @@ function AppDataLayer() {
             whiteboardCounts={whiteboardCounts}
             reloadWhiteboards={reloadWhiteboards}
             standaloneIOCsHook={standaloneIOCsHook}
+            incidentTypesHook={incidentTypesHook}
             evidenceItemsHook={evidenceItemsHook}
             assetsHook={assetsHook}
             chatsHook={chatsHook}
@@ -400,6 +407,7 @@ type AppInnerProps = {
   remoteInvestigations: ReturnType<typeof useRemoteInvestigations>['remoteInvestigations'];
   remoteLoading: boolean;
   refreshRemote: ReturnType<typeof useRemoteInvestigations>['refresh'];
+  incidentTypesHook: ReturnType<typeof useIncidentTypes>;
   presenceUsers: ReturnType<typeof useServerSync>['presenceUsers'];
   syncConflicts: ReturnType<typeof useServerSync>['syncConflicts'];
   setSyncConflicts: ReturnType<typeof useServerSync>['setSyncConflicts'];
@@ -423,7 +431,7 @@ const AppInner = memo(function AppInner({
   whiteboards, whiteboardsLoading, bulkDataLoading, createWhiteboard, updateWhiteboard, deleteWhiteboard,
   trashWhiteboard, restoreWhiteboard, toggleArchiveWhiteboard,
   emptyTrashWhiteboards, getFilteredWhiteboards, reloadWhiteboards,
-  standaloneIOCsHook, evidenceItemsHook, assetsHook, chatsHook,
+  standaloneIOCsHook, incidentTypesHook, evidenceItemsHook, assetsHook, chatsHook,
   folders: allFolders, foldersLoading, createFolder, findOrCreateFolder, updateFolder, deleteFolder,
   deleteFolderWithContents, trashFolderContents, archiveFolder, unarchiveFolder, reloadFolders,
   tags: allTags, createTag, updateTag, deleteTag, reloadTags,
@@ -1595,7 +1603,6 @@ const AppInner = memo(function AppInner({
 
   // Case log — scoped to the open investigation.
   const caseUpdatesHook = useCaseUpdates(selectedFolderId);
-  const incidentTypesHook = useIncidentTypes(auth.connected, auth.serverUrl);
   const isServerAdmin = auth.connected && auth.user?.role === 'admin';
   // Incident type to open in Settings → Incident types (from the Summary view's "Edit layout").
   const [layoutEditorTypeId, setLayoutEditorTypeId] = useState<string | undefined>();

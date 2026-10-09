@@ -204,7 +204,7 @@ function SummarySection({ id, width, folder, now, ...props }: Omit<SummaryViewPr
                 </button>
               ))}
             </div>
-            <p className="text-[11px] text-text-muted">{t('detail.created')} {formatFullDate(folder.createdAt)}</p>
+            <p className="text-[11px] text-text-muted">{t('detail.created', { date: formatFullDate(folder.createdAt) })}</p>
           </div>
         </Card>
       );

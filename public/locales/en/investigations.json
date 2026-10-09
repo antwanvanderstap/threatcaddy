@@ -135,6 +135,8 @@
   "incidentTypes.toggleWidth": "Toggle half or full width",
   "incidentTypes.full": "Full",
   "incidentTypes.half": "Half",
+  "incidentTypes.makeHalf": "Make half width",
+  "incidentTypes.makeFull": "Make full width",
   "incidentTypes.moveUp": "Move up",
   "incidentTypes.moveDown": "Move down",
   "incidentTypes.moveToTab": "Move to…",
