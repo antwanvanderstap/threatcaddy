@@ -16,7 +16,7 @@ import {
 import type { CaseUpdate, CaseUpdateType, Folder, IncidentPhase } from '../../types';
 import { CASE_UPDATE_TYPES, INCIDENT_PHASES } from '../../types';
 import { cn, formatDate } from '../../lib/utils';
-import { filterUpdates, isEdited, incidentDurations } from '../../lib/case-updates';
+import { filterUpdates, isEdited, incidentDurations, formatDuration } from '../../lib/case-updates';
 
 interface CaseLogViewProps {
   folder?: Folder;
@@ -37,15 +37,6 @@ const TYPE_STYLE: Record<CaseUpdateType, { icon: typeof ClipboardList; chip: str
   containment: { icon: ShieldCheck, chip: 'bg-accent-amber/15 text-accent-amber border-accent-amber/30' },
   handover: { icon: UserCheck, chip: 'bg-accent-purple/15 text-accent-purple border-accent-purple/30' },
 };
-
-function formatDuration(ms: number | undefined, t: (k: string, o?: Record<string, unknown>) => string): string | undefined {
-  if (ms == null) return undefined;
-  const minutes = Math.round(ms / 60_000);
-  if (minutes < 60) return t('duration.minutes', { count: minutes });
-  const hours = Math.round(minutes / 60);
-  if (hours < 48) return t('duration.hours', { count: hours });
-  return t('duration.days', { count: Math.round(hours / 24) });
-}
 
 export function CaseLogView({
   folder, updates, onAdd, onEdit, onDelete, onAdvancePhase, now: fixedNow,

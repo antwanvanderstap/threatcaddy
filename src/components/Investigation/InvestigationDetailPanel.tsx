@@ -1,14 +1,16 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Briefcase, FileBarChart, Share2, Cloud, CloudOff, Archive, Trash2, Printer, BookOpen } from 'lucide-react';
-import type { Folder, InvestigationStatus, ClosureResolution, PlaybookStep, IncidentSeverity, StandaloneIOC } from '../../types';
-import { INCIDENT_SEVERITIES, IOC_TYPE_LABELS, IOC_STIX_OBJECT_TYPES } from '../../types';
+import type { Folder, InvestigationStatus, ClosureResolution, PlaybookStep, IncidentSeverity, IncidentType, StandaloneIOC } from '../../types';
+import { INCIDENT_SEVERITIES } from '../../types';
 import { NOTE_COLORS, CLOSURE_RESOLUTION_LABELS } from '../../types';
 import { TagInput } from '../Common/TagInput';
 import { ConfirmDialog } from '../Common/ConfirmDialog';
 import type { Tag } from '../../types';
 import { cn, formatFullDate } from '../../lib/utils';
 import { PlaybookProgress } from '../Playbooks/PlaybookProgress';
+import { ObservedStixObjects } from './ObservedStixObjects';
+import { stixObservablesOf } from '../../lib/stix-observables';
 
 interface InvestigationDetailPanelProps {
   folder: Folder;
@@ -17,6 +19,8 @@ interface InvestigationDetailPanelProps {
   allTags: Tag[];
   onCreateTag: (name: string) => Promise<Tag>;
   entityCounts: { notes: number; tasks: number; events: number; whiteboards: number };
+  /** Team incident types; the picker is hidden when there are none. */
+  incidentTypes?: IncidentType[];
   /** The investigation's observables, shown as STIX objects above the description. */
   observables?: StandaloneIOC[];
   onOpenObservables?: () => void;
@@ -36,8 +40,6 @@ interface InvestigationDetailPanelProps {
   onDelete?: (folderId: string) => void;
 }
 
-const OBSERVABLES_COLLAPSED = 12;
-
 const STATUS_KEYS: { value: InvestigationStatus; key: string }[] = [
   { value: 'active', key: 'detail.active' },
   { value: 'closed', key: 'detail.closed' },
@@ -51,6 +53,7 @@ export function InvestigationDetailPanel({
   allTags,
   onCreateTag,
   entityCounts,
+  incidentTypes,
   observables,
   onOpenObservables,
   effectiveClsLevels,
@@ -73,21 +76,7 @@ export function InvestigationDetailPanel({
   const [name, setName] = useState(folder.name);
   const [description, setDescription] = useState(folder.description || '');
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
-  const [showAllObservables, setShowAllObservables] = useState(false);
-
-  // One entry per distinct STIX type + value, grouped by STIX type.
-  const stixObservables = useMemo(() => {
-    const seen = new Set<string>();
-    return (observables ?? [])
-      .map((ioc) => ({ ioc, stixType: IOC_STIX_OBJECT_TYPES[ioc.type] ?? ioc.type }))
-      .filter(({ ioc, stixType }) => {
-        const key = `${stixType}|${ioc.value.toLowerCase()}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-      .sort((a, b) => a.stixType.localeCompare(b.stixType) || a.ioc.value.localeCompare(b.ioc.value));
-  }, [observables]);
+  const observableCount = useMemo(() => stixObservablesOf(observables ?? []).length, [observables]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -161,48 +150,34 @@ export function InvestigationDetailPanel({
             />
           </div>
 
+          {/* Incident type: picks the investigation's Summary layout */}
+          {incidentTypes && incidentTypes.length > 0 && (
+            <div>
+              <label htmlFor="investigation-incident-type" className="block text-xs font-medium text-gray-400 mb-1">{t('summary.typeLabel')}</label>
+              <select
+                id="investigation-incident-type"
+                value={folder.incidentType && incidentTypes.some((x) => x.id === folder.incidentType) ? folder.incidentType : ''}
+                onChange={(e) => onUpdate(folder.id, { incidentType: e.target.value || undefined })}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-accent"
+              >
+                <option value="">{t('summary.typeDefault')}</option>
+                {incidentTypes.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+            </div>
+          )}
+
           {/* Observed STIX objects */}
           {observables && (
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-medium text-gray-400">{t('detail.observablesLabel', { count: stixObservables.length })}</label>
-                {onOpenObservables && stixObservables.length > 0 && (
+                <label className="block text-xs font-medium text-gray-400">{t('detail.observablesLabel', { count: observableCount })}</label>
+                {onOpenObservables && observableCount > 0 && (
                   <button onClick={onOpenObservables} className="text-[11px] text-accent hover:text-accent-hover">
                     {t('detail.observablesOpen')}
                   </button>
                 )}
               </div>
-              {stixObservables.length === 0 ? (
-                <p className="text-xs text-gray-500">{t('detail.observablesEmpty')}</p>
-              ) : (
-                <>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(showAllObservables ? stixObservables : stixObservables.slice(0, OBSERVABLES_COLLAPSED)).map(({ ioc, stixType }) => {
-                      const color = IOC_TYPE_LABELS[ioc.type]?.color ?? '#6b7280';
-                      const value = ioc.value.split('\n')[0];
-                      return (
-                        <span
-                          key={ioc.id}
-                          title={`${stixType}: ${ioc.value}`}
-                          className={cn('inline-flex max-w-full items-stretch rounded-md border overflow-hidden text-xs font-mono', ioc.iocStatus === 'false-positive' && 'opacity-50')}
-                          style={{ borderColor: `${color}40` }}
-                        >
-                          <span className="px-1.5 py-0.5 text-[10px] shrink-0 flex items-center" style={{ backgroundColor: `${color}20`, color }}>{stixType}</span>
-                          <span className="px-1.5 py-0.5 text-gray-200 truncate">{value}</span>
-                        </span>
-                      );
-                    })}
-                  </div>
-                  {stixObservables.length > OBSERVABLES_COLLAPSED && (
-                    <button
-                      onClick={() => setShowAllObservables((v) => !v)}
-                      className="mt-1.5 text-[11px] text-gray-400 hover:text-gray-200"
-                    >
-                      {showAllObservables ? t('detail.observablesShowLess') : t('detail.observablesShowAll', { count: stixObservables.length })}
-                    </button>
-                  )}
-                </>
-              )}
+              <ObservedStixObjects observables={observables} />
             </div>
           )}
 

@@ -8,6 +8,7 @@ import { useToast } from '../../contexts/ToastContext';
 import type { Settings, Note, NoteTemplate, PlaybookTemplate, PlaybookStep, CustomSlashCommand } from '../../types';
 import { useCustomSlashCommands } from '../../hooks/useCustomSlashCommands';
 import { TemplateManager } from './TemplateManager';
+import { IncidentTypeManager, type IncidentTypeManagerProps } from './IncidentTypeManager';
 import { PlaybookManager } from './PlaybookManager';
 import { ConnectWiseConfig } from './ConnectWiseConfig';
 import { DEFAULT_SYSTEM_PROMPT } from '../../lib/llm-tools';
@@ -107,9 +108,10 @@ interface SettingsPanelProps {
     onSyncConfigurations?: () => Promise<void>;
     onPullTickets?: () => Promise<void>;
   };
+  incidentTypeProps?: IncidentTypeManagerProps;
 }
 
-type SettingsTab = 'general' | 'appearance' | 'ai' | 'agents' | 'data' | 'templates' | 'intel' | 'integrations' | 'shortcuts';
+export type SettingsTab = 'general' | 'appearance' | 'ai' | 'agents' | 'data' | 'templates' | 'incidentTypes' | 'intel' | 'integrations' | 'shortcuts';
 
 // ── Custom Slash Commands Editor ────────────────────────────────────
 
@@ -227,9 +229,9 @@ function CustomSlashCommandsEditor() {
   );
 }
 
-const TAB_KEYS: SettingsTab[] = ['general', 'appearance', 'ai', 'agents', 'data', 'templates', 'intel', 'integrations', 'shortcuts'];
+const TAB_KEYS: SettingsTab[] = ['general', 'appearance', 'ai', 'agents', 'data', 'templates', 'incidentTypes', 'intel', 'integrations', 'shortcuts'];
 
-export function SettingsPanel({ settings, onUpdateSettings, notes, onImportComplete, sampleLoaded, onLoadSample, onDeleteSample, onClose, initialTab, templateProps, playbookProps, connectWiseProps }: SettingsPanelProps) {
+export function SettingsPanel({ settings, onUpdateSettings, notes, onImportComplete, sampleLoaded, onLoadSample, onDeleteSample, onClose, initialTab, templateProps, playbookProps, connectWiseProps, incidentTypeProps }: SettingsPanelProps) {
   const { t } = useTranslation('settings');
   const { addToast } = useToast();
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab || 'general');
@@ -745,6 +747,13 @@ export function SettingsPanel({ settings, onUpdateSettings, notes, onImportCompl
         <div className="space-y-6" role="tabpanel" id="settings-panel-templates" aria-labelledby="settings-tab-templates">
           {templateProps && <TemplateManager {...templateProps} />}
           {playbookProps && <PlaybookManager {...playbookProps} />}
+        </div>
+      )}
+
+      {/* Incident Types Tab */}
+      {activeTab === 'incidentTypes' && (
+        <div className="space-y-6" role="tabpanel" id="settings-panel-incidentTypes" aria-labelledby="settings-tab-incidentTypes">
+          {incidentTypeProps && <IncidentTypeManager {...incidentTypeProps} />}
         </div>
       )}
 

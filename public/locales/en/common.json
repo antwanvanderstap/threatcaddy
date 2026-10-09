@@ -113,6 +113,7 @@
   "sidebar.products": "Products",
   "sidebar.assets": "Assets",
   "sidebar.caseLog": "Case log",
+  "sidebar.summary": "Summary",
   "sidebar.iocs": "IOCs",
   "sidebar.graph": "Graph",
   "sidebar.activity": "Activity",

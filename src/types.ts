@@ -219,6 +219,8 @@ export interface Folder {
   customerCode?: string;
   /** Readable number assigned by the team server, e.g. `NAG-0042`. */
   caseNumber?: string;
+  /** Incident type id (team-wide, see IncidentType). Unset or unknown: the default layout. */
+  incidentType?: string;
   createdBy?: string;
   updatedBy?: string;
   localOnly?: boolean;
@@ -233,6 +235,42 @@ export interface Folder {
   agentLastRunAt?: number;
   /** CaddyAgent: current runtime status */
   agentStatus?: AgentStatus;
+}
+
+/** Width of a section in the Summary view's two-column grid. */
+export type LayoutSectionWidth = 'half' | 'full';
+
+/** One section of a Summary-view tab: a built-in section id, or later `field:<key>`. */
+export interface LayoutSection {
+  id: string;
+  width: LayoutSectionWidth;
+}
+
+export interface LayoutTab {
+  id: string;
+  title: string;
+  sections: LayoutSection[];
+}
+
+/** How an incident type's investigations are laid out in the Summary view. */
+export interface IncidentLayout {
+  tabs: LayoutTab[];
+}
+
+/** A team-wide incident type, defined by admins on the team server. */
+export interface IncidentType {
+  id: string;
+  name: string;
+  description: string;
+  color: string | null;
+  /** ATT&CK technique ids that classify an alert as this type. */
+  attackTechniques: string[];
+  defaultPlaybookId: string | null;
+  /** Null: the built-in default layout. */
+  layout: IncidentLayout | null;
+  order: number;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface Tag {
@@ -254,7 +292,7 @@ export interface BackupDestination {
 }
 
 /** Top-level view/page the user can navigate to. */
-export type ViewMode = 'dashboard' | 'notes' | 'tasks' | 'timeline' | 'whiteboard' | 'evidence' | 'products' | 'assets' | 'case-log' | 'activity' | 'graph' | 'ioc-stats' | 'chat' | 'caddyshack' | 'agent' | 'investigations';
+export type ViewMode = 'dashboard' | 'summary' | 'notes' | 'tasks' | 'timeline' | 'whiteboard' | 'evidence' | 'products' | 'assets' | 'case-log' | 'activity' | 'graph' | 'ioc-stats' | 'chat' | 'caddyshack' | 'agent' | 'investigations';
 export type EditorMode = 'edit' | 'preview' | 'split';
 export type TaskViewMode = 'list' | 'kanban';
 

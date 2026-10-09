@@ -1,4 +1,4 @@
-import type { Post, Notification, InvestigationMember } from '../types';
+import type { Post, Notification, InvestigationMember, IncidentType } from '../types';
 import type { ActivityEntry } from '../components/CaddyShack/ActivityCard';
 import i18n from '../i18n';
 import { cancelServerRequests, fetchServerResponse } from './server-response';
@@ -37,6 +37,7 @@ export interface InvestigationListItem {
     tags: string[];
     caseNumber?: string | null;
     customerCode?: string | null;
+    incidentType?: string | null;
     externalRefs?: Record<string, string> | null;
     createdAt: string;
     updatedAt: string;
@@ -625,6 +626,39 @@ export async function fetchTeamTemplates(): Promise<unknown[]> {
 export async function deleteTeamTemplate(id: string): Promise<void> {
   const resp = await apiFetch(`/api/integrations/templates/${id}`, { method: 'DELETE' });
   if (!resp.ok) throw new Error('Failed to delete template');
+}
+
+// ─── Incident Types (team-wide; admins edit) ──────────────────────
+
+async function incidentTypeError(resp: Response, fallback: string): Promise<Error> {
+  const body = await resp.json().catch(() => null) as { error?: string } | null;
+  return new Error(body?.error || fallback);
+}
+
+export async function fetchIncidentTypes(): Promise<IncidentType[]> {
+  const resp = await apiFetch('/api/incident-types');
+  if (!resp.ok) throw await incidentTypeError(resp, 'Failed to fetch incident types');
+  return ((await resp.json()) as { types: IncidentType[] }).types;
+}
+
+export type IncidentTypeChanges = Partial<Pick<IncidentType,
+  'name' | 'description' | 'color' | 'attackTechniques' | 'defaultPlaybookId' | 'layout' | 'order'>>;
+
+export async function createIncidentType(input: IncidentTypeChanges & { name: string }): Promise<IncidentType> {
+  const resp = await apiFetch('/api/incident-types', { method: 'POST', body: JSON.stringify(input) });
+  if (!resp.ok) throw await incidentTypeError(resp, 'Failed to create incident type');
+  return ((await resp.json()) as { type: IncidentType }).type;
+}
+
+export async function updateIncidentType(id: string, changes: IncidentTypeChanges): Promise<IncidentType> {
+  const resp = await apiFetch(`/api/incident-types/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(changes) });
+  if (!resp.ok) throw await incidentTypeError(resp, 'Failed to update incident type');
+  return ((await resp.json()) as { type: IncidentType }).type;
+}
+
+export async function deleteIncidentType(id: string): Promise<void> {
+  const resp = await apiFetch(`/api/incident-types/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (!resp.ok) throw await incidentTypeError(resp, 'Failed to delete incident type');
 }
 
 // ─── Saved Searches (Team Sharing) ────────────────────────────────

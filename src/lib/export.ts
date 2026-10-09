@@ -322,6 +322,7 @@ export function sanitizeFolder(raw: unknown): Folder | null {
     externalRefs: sanitizeStringMap(r.externalRefs),
     customerCode: r.customerCode != null ? str(r.customerCode) : undefined,
     caseNumber: r.caseNumber != null ? str(r.caseNumber) : undefined,
+    incidentType: r.incidentType != null ? str(r.incidentType) : undefined,
   };
 }
 

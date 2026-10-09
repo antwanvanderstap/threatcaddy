@@ -12,6 +12,7 @@ const TimelineView = lazy(() => import('./components/Timeline/TimelineView').the
 const WhiteboardView = lazy(() => import('./components/Whiteboard/WhiteboardView').then(m => ({ default: m.WhiteboardView })));
 const ActivityLogView = lazy(() => import('./components/Activity/ActivityLogView').then(m => ({ default: m.ActivityLogView })));
 const QuickCapture = lazy(() => import('./components/Clips/QuickCapture').then(m => ({ default: m.QuickCapture })));
+import type { SettingsTab } from './components/Settings/SettingsPanel';
 const SettingsPanel = lazy(() => import('./components/Settings/SettingsPanel').then(m => ({ default: m.SettingsPanel })));
 import { useNotes } from './hooks/useNotes';
 import { useTasks } from './hooks/useTasks';
@@ -24,6 +25,7 @@ import { useAssets } from './hooks/useAssets';
 import { useConnectWise } from './hooks/useConnectWise';
 import type { TicketIntakePlan } from './lib/connectwise-tickets';
 import { useCaseUpdates } from './hooks/useCaseUpdates';
+import { useIncidentTypes } from './hooks/useIncidentTypes';
 import { useChats } from './hooks/useChats';
 import { useFolders } from './hooks/useFolders';
 import { useTags } from './hooks/useTags';
@@ -37,6 +39,7 @@ const ConnectWiseTicketReview = lazy(() => import('./components/Integrations/Con
 const OperationNameGenerator = lazy(() => import('./components/Common/OperationNameGenerator').then(m => ({ default: m.OperationNameGenerator })));
 const EvidenceView = lazy(() => import('./components/Evidence/EvidenceView').then(m => ({ default: m.EvidenceView })));
 const AssetView = lazy(() => import('./components/Assets/AssetView').then(m => ({ default: m.AssetView })));
+const SummaryView = lazy(() => import('./components/Investigation/SummaryView').then(m => ({ default: m.SummaryView })));
 const CaseLogView = lazy(() => import('./components/Investigation/CaseLogView').then(m => ({ default: m.CaseLogView })));
 const ProductView = lazy(() => import('./components/Products/ProductView').then(m => ({ default: m.ProductView })));
 import { useActivityLog } from './hooks/useActivityLog';
@@ -1592,6 +1595,16 @@ const AppInner = memo(function AppInner({
 
   // Case log — scoped to the open investigation.
   const caseUpdatesHook = useCaseUpdates(selectedFolderId);
+  const incidentTypesHook = useIncidentTypes(auth.connected, auth.serverUrl);
+  const isServerAdmin = auth.connected && auth.user?.role === 'admin';
+  // Incident type to open in Settings → Incident types (from the Summary view's "Edit layout").
+  const [layoutEditorTypeId, setLayoutEditorTypeId] = useState<string | undefined>();
+  const summaryObservables = useMemo(
+    () => investigationMode === 'remote'
+      ? remoteData.iocs.filter(visibility.isEntityVisible)
+      : selectedFolderId ? screensafeStandaloneIOCs.filter((i) => i.folderId === selectedFolderId && !i.trashed && !i.archived) : [],
+    [investigationMode, remoteData.iocs, visibility, screensafeStandaloneIOCs, selectedFolderId]
+  );
 
   const handleAdvancePhase = useCallback(async (phase: IncidentPhase) => {
     if (!selectedFolder) return;
@@ -1872,7 +1885,7 @@ const AppInner = memo(function AppInner({
             onLoadSample={handleLoadSample}
             onDeleteSample={handleDeleteSample}
             onClose={() => { closeSettings(); }}
-            initialTab={settingsInitialTab as 'general' | 'ai' | 'data' | 'templates' | 'intel' | 'integrations' | 'shortcuts' | undefined}
+            initialTab={settingsInitialTab as SettingsTab | undefined}
             templateProps={{
               templates: noteTemplatesHook.templates,
               userTemplates: noteTemplatesHook.userTemplates,
@@ -1892,6 +1905,17 @@ const AppInner = memo(function AppInner({
             connectWiseProps={{
               onSyncConfigurations: handleSyncConnectWiseAssets,
               onPullTickets: handlePullConnectWiseTickets,
+            }}
+            incidentTypeProps={{
+              types: incidentTypesHook.types,
+              connected: auth.connected,
+              canEdit: isServerAdmin,
+              error: incidentTypesHook.error,
+              playbooks: playbooksHook.playbooks,
+              initialTypeId: layoutEditorTypeId,
+              onCreate: incidentTypesHook.create,
+              onUpdate: incidentTypesHook.update,
+              onDelete: incidentTypesHook.remove,
             }}
           />
           </ErrorBoundary>
@@ -2049,6 +2073,23 @@ const AppInner = memo(function AppInner({
             onImportFiles={handleImportEvidence}
             onDeduplicate={handleDeduplicateEvidence}
             onOpenChat={() => setActiveView('chat')}
+          />
+        ) : activeView === 'summary' ? (
+          <SummaryView
+            folder={selectedFolder}
+            types={incidentTypesHook.types}
+            canEditLayouts={isServerAdmin}
+            observables={summaryObservables}
+            notes={investigationNotes.filter((n) => !n.trashed && !n.archived)}
+            tasks={investigationTasks.filter((t) => !t.trashed && !t.archived)}
+            events={investigationTimelineEvents.filter((e) => !e.trashed && !e.archived)}
+            caseUpdates={caseUpdatesHook.updates}
+            onUpdate={updateFolder}
+            onAdvancePhase={handleAdvancePhase}
+            onOpenView={(view) => navigateTo(view)}
+            onOpenNote={(id) => { setSelectedNoteId(id); navigateTo('notes', { selectedNoteId: id }); }}
+            onOpenDetails={() => setEditingFolderId(selectedFolderId)}
+            onEditLayout={(typeId) => { setLayoutEditorTypeId(typeId); openSettings('incidentTypes'); }}
           />
         ) : activeView === 'case-log' ? (
           <CaseLogView
@@ -2533,6 +2574,7 @@ const AppInner = memo(function AppInner({
           allTags={tags}
           onCreateTag={loggedCreateTag}
           entityCounts={investigationEntityCounts}
+          incidentTypes={incidentTypesHook.types}
           observables={investigationObservables}
           onOpenObservables={() => {
             setSelectedFolderId(editingFolder.id);

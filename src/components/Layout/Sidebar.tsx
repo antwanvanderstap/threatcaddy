@@ -3,7 +3,7 @@ import {
   FileText, ListChecks, Clock, Trash2, Briefcase,
   Archive, Settings as SettingsIcon,
   PanelLeftClose, PanelLeft, Github, Download, Chrome, PenTool, Activity, Network, Search, Shield,
-  LayoutDashboard, MessageSquare, MessagesSquare, ChevronLeft, Bot, Paperclip, FileOutput, HardDrive, ClipboardList,
+  LayoutDashboard, MessageSquare, MessagesSquare, ChevronLeft, Bot, Paperclip, FileOutput, HardDrive, ClipboardList, LayoutTemplate,
 } from 'lucide-react';
 import type { Timeline, Whiteboard, ViewMode } from '../../types';
 import { cn } from '../../lib/utils';
@@ -104,6 +104,7 @@ export function Sidebar({
   ];
 
   const collapsedInvestigationItems: { view: ViewMode; icon: typeof FileText; label: string; badge?: number; badgeColor?: string; dataTour?: string }[] = [
+    ...(selectedFolder ? [{ view: 'summary' as const, icon: LayoutTemplate, label: t('sidebar.summary') }] : []),
     { view: 'notes', icon: FileText, label: t('sidebar.notes'), badge: investigationScopedCounts ? investigationScopedCounts.notes : noteCounts.total, badgeColor: 'bg-accent-blue' },
     { view: 'tasks', icon: ListChecks, label: t('sidebar.tasks'), badge: investigationScopedCounts ? investigationScopedCounts.tasks : taskCounts.total, badgeColor: 'bg-accent-amber', dataTour: 'tasks' },
     { view: 'timeline', icon: Clock, label: t('sidebar.timeline'), badge: investigationScopedCounts ? investigationScopedCounts.events : timelineCounts?.total, badgeColor: 'bg-accent-green', dataTour: 'timeline' },
@@ -337,6 +338,16 @@ export function Sidebar({
 
         {/* Entity views — always visible */}
         <div className="h-px bg-border-subtle mx-1 my-1.5" />
+
+        {selectedFolder && (
+          <NavItem
+            icon={<LayoutTemplate size={16} />}
+            label={t('sidebar.summary')}
+            active={activeView === 'summary' && !showTrash && !showArchive}
+            onClick={() => nav(() => navToView('summary'))}
+            scopedColor={selectedFolder.color || undefined}
+          />
+        )}
 
         <NavItem
           icon={<FileText size={16} />}

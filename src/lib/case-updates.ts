@@ -116,6 +116,16 @@ export function incidentDurations(folder: Folder, now: number): IncidentDuration
   };
 }
 
+/** Human duration ("40 minutes", "6 hours", "3 days") with the incident namespace's duration.* keys. */
+export function formatDuration(ms: number | undefined, t: (k: string, o?: Record<string, unknown>) => string): string | undefined {
+  if (ms == null) return undefined;
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 60) return t('duration.minutes', { count: minutes });
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return t('duration.hours', { count: hours });
+  return t('duration.days', { count: Math.round(hours / 24) });
+}
+
 /** Sort weight for a severity, most urgent first. Untriaged sorts last. */
 export function severityRank(severity: IncidentSeverity | undefined): number {
   switch (severity) {
