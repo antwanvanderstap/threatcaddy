@@ -39,6 +39,7 @@
 
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
+import { sanitizeLine, sanitizeText } from '../lib/ingest-text.js';
 import { db } from '../db/index.js';
 import { folders, notes, standaloneIOCs, caseUpdates, users, investigationMembers } from '../db/schema.js';
 import { eq, and, gt, isNull, isNotNull, sql } from 'drizzle-orm';
@@ -146,11 +147,7 @@ const MAX_SOURCE_LEN = 50;
 const MAX_IOC_VALUE_LEN = 500;
 
 /** Sanitize a string: trim, enforce max length, strip control chars. */
-function sanitizeStr(s: unknown, maxLen: number): string {
-  if (typeof s !== 'string') return '';
-  // eslint-disable-next-line no-control-regex
-  return s.trim().replace(/[\x00-\x1f]/g, '').substring(0, maxLen);
-}
+const sanitizeStr = sanitizeLine;
 
 class IngestAuthorizationError extends Error {
   constructor(message: string, readonly status: 403 | 503) { super(message); }
@@ -176,7 +173,7 @@ app.post('/ingest', async (c) => {
     return c.json({ error: 'source (string, max 50) and title (string, max 200) are required' }, 400);
   }
   const severity = VALID_SEVERITIES.has(String(body.severity || '')) ? String(body.severity) as 'low' | 'medium' | 'high' | 'critical' : 'medium';
-  const description = sanitizeStr(body.description, 5000);
+  const description = sanitizeText(body.description, 5000);
   const tags = Array.isArray(body.tags) ? body.tags.filter((t): t is string => typeof t === 'string' && t.length < 100).slice(0, 20) : [];
 
   let customerCode: string | null = null;
