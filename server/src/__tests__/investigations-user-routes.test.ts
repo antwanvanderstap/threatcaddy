@@ -125,6 +125,7 @@ vi.mock('drizzle-orm', () => ({
   eq: vi.fn((_col: unknown, _val: unknown) => ({ _col, _val })),
   and: vi.fn((...args: unknown[]) => ({ _and: args })),
   count: vi.fn(() => 'count_fn'),
+  desc: vi.fn((_col: unknown) => ({ _desc: _col })),
   sql: vi.fn((...args: unknown[]) => {
     // Return an object with .as() method to mimic sql`...`.as('alias')
     const result = { _sql: args, as: vi.fn(() => result) };

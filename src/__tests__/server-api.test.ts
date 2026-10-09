@@ -292,13 +292,24 @@ describe('server-api', () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: () => Promise.resolve([]),
+        json: () => Promise.resolve({ data: [], total: 0 }),
       });
       await fetchInvestigations();
       expect(mockFetch).toHaveBeenCalledWith(
-        'http://test-server/api/investigations',
+        'http://test-server/api/investigations?limit=200&offset=0',
         expect.any(Object),
       );
+    });
+
+    it('fetchInvestigations reads every page, not only the first', async () => {
+      const item = (folderId: string) => ({ folderId });
+      mockFetch
+        .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({ data: [item('a'), item('b')], total: 3 }) })
+        .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({ data: [item('c')], total: 3 }) });
+      const result = await fetchInvestigations();
+      expect(result.data.map(i => i.folderId)).toEqual(['a', 'b', 'c']);
+      expect(result.total).toBe(3);
+      expect(mockFetch).toHaveBeenLastCalledWith('http://test-server/api/investigations?limit=200&offset=2', expect.any(Object));
     });
 
     it('getFileUrl returns correct URL', () => {

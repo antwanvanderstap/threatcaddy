@@ -111,7 +111,10 @@ export function InvestigationDetailPanel({
         {/* Header */}
         <div className="flex items-center gap-3 p-4 border-b border-gray-800">
           <Briefcase size={20} style={{ color: folder.color }} />
-          <h2 className="text-lg font-semibold text-gray-100 flex-1">{t('detail.title')}</h2>
+          <h2 className="text-lg font-semibold text-gray-100 flex-1">
+            {t('detail.title')}
+            {folder.caseNumber && <span className="ms-2 text-sm font-mono font-normal text-gray-400">{folder.caseNumber}</span>}
+          </h2>
           <button
             onClick={onClose}
             className="p-1.5 rounded hover:bg-gray-800 text-gray-400 hover:text-gray-200"

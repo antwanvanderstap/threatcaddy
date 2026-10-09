@@ -135,7 +135,7 @@ export function Header({
           title={selectedFolderName}
         >
           <Briefcase size={10} className="shrink-0" />
-          <span className="truncate">{selectedFolderName}</span>
+          <span className="truncate">{selectedFolder?.caseNumber ?? selectedFolderName}</span>
         </span>
       )}
 

@@ -215,6 +215,10 @@ export interface Folder {
    * updates the existing investigation instead of opening a duplicate.
    */
   externalRefs?: Record<string, string>;
+  /** Customer the investigation belongs to, e.g. `NAG`. */
+  customerCode?: string;
+  /** Readable number assigned by the team server, e.g. `NAG-0042`. */
+  caseNumber?: string;
   createdBy?: string;
   updatedBy?: string;
   localOnly?: boolean;
@@ -1494,9 +1498,14 @@ export interface InvestigationSummary {
     tags?: string[];
     severity?: IncidentSeverity | null;
     irPhase?: IncidentPhase | null;
+    caseNumber?: string | null;
+    customerCode?: string | null;
+    externalRefs?: Record<string, string> | null;
     createdAt: string;
     updatedAt: string;
   };
+  /** Alert notes in the investigation (team servers that report it). */
+  alertCount?: number;
   entityCounts: {
     notes: number;
     tasks: number;

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
-import { eq, and, count, sql } from 'drizzle-orm';
+import { eq, and, count, desc, sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { requireAuth } from '../middleware/auth.js';
 import { checkInvestigationAccess } from '../middleware/access.js';
@@ -50,13 +50,19 @@ app.get('/', async (c) => {
         folderTags: folders.tags,
         folderSeverity: folders.severity,
         folderIrPhase: folders.irPhase,
+        folderCaseNumber: folders.caseNumber,
+        folderCustomerCode: folders.customerCode,
+        folderExternalRefs: folders.externalRefs,
         folderCreatedAt: folders.createdAt,
         folderUpdatedAt: folders.updatedAt,
         memberCount: sql<number>`(select count(*) from investigation_members where folder_id = ${investigationMembers.folderId})`.as('member_count'),
+        alertCount: sql<number>`(select count(*) from notes where folder_id = ${investigationMembers.folderId} and tags ? 'alert' and not trashed)`.as('alert_count'),
       })
       .from(investigationMembers)
       .innerJoin(folders, eq(folders.id, investigationMembers.folderId))
       .where(eq(investigationMembers.userId, user.id))
+      // Newest first and stable, so pages neither overlap nor skip.
+      .orderBy(desc(folders.createdAt), folders.id)
       .limit(limit)
       .offset(offset),
   ]);
@@ -82,11 +88,15 @@ app.get('/', async (c) => {
       tags: m.folderTags,
       severity: m.folderSeverity,
       irPhase: m.folderIrPhase,
+      caseNumber: m.folderCaseNumber,
+      customerCode: m.folderCustomerCode,
+      externalRefs: m.folderExternalRefs,
       createdAt: m.folderCreatedAt,
       updatedAt: m.folderUpdatedAt,
     },
     entityCounts: entityCountsMap.get(m.folderId) ?? { notes: 0, tasks: 0, iocs: 0, events: 0, whiteboards: 0, chats: 0, evidence: 0 },
     memberCount: m.memberCount,
+    alertCount: Number(m.alertCount),
   }));
 
   return c.json({ data, total, limit, offset });

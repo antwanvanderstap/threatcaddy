@@ -109,6 +109,20 @@ describe('webhook investigation ownership', () => {
     expect(teamQueue.share).toHaveBeenCalledOnce();
     expect(teamQueue.share).toHaveBeenCalledWith(expect.objectContaining({ insert: expect.any(Function) }), { folderId: investigationId });
   });
+  it('names the investigation after the alert and numbers it under the customer', async () => {
+    mocks.results.push([owner]);
+    const response = await request({ source: 'connectwise', title: 'Account locked out', customer: { code: 'nag', name: 'The Nu-Age Group' }, externalRef: { system: 'connectwise', id: '214033' } });
+    expect(response.status).toBe(200);
+    expect(mocks.committed[0].values).toMatchObject({ name: 'Account locked out', customerCode: 'NAG' });
+    expect(mocks.committed[2].values).toMatchObject({ title: 'Account locked out', tags: ['alert', 'source:connectwise', 'severity:medium', 'ref:connectwise:214033'] });
+  });
+
+  it('rejects a customer code that cannot prefix an investigation number', async () => {
+    mocks.results.push([owner]);
+    expect((await request({ source: 'synthetic', title: 'Alert', customer: { code: 'NAG-1' } })).status).toBe(400);
+    expect(mocks.transaction).not.toHaveBeenCalled();
+  });
+
   it('appends only the case log when an external ref was already ingested', async () => {
     mocks.results.push([owner], [{ id: 'inv-1', irPhase: 'containment', externalRefs: { ticketing: '42' } }]);
     const response = await request({ source: 'synthetic', title: 'Repeat', externalRef: { system: 'ticketing', id: '42' }, caseUpdate: { body: 'Ticket closed' } });

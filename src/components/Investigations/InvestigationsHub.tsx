@@ -10,9 +10,21 @@ const ZERO_COUNTS = { notes: 0, tasks: 0, iocs: 0, events: 0, whiteboards: 0, ch
 
 type RowStatus = InvestigationRow['status'];
 
-function localRow(f: Folder, dataMode: 'local' | 'synced', entityCounts: InvestigationRow['entityCounts'], remote?: InvestigationSummary): InvestigationRow {
+/** The ticket that opened the case: ConnectWise first, as the system of record. */
+export function ticketLabel(refs?: Record<string, string> | null): string | undefined {
+  if (!refs) return undefined;
+  if (refs.connectwise) return `CW #${refs.connectwise}`;
+  if (refs.stellar) return `Stellar #${refs.stellar}`;
+  const [system, id] = Object.entries(refs)[0] ?? [];
+  return system ? `${system} #${id}` : undefined;
+}
+
+function localRow(f: Folder, dataMode: 'local' | 'synced', entityCounts: InvestigationRow['entityCounts'], remote?: InvestigationSummary, alertCount?: number): InvestigationRow {
   return {
     folderId: f.id,
+    caseNumber: f.caseNumber ?? remote?.folder.caseNumber ?? undefined,
+    ticket: ticketLabel(f.externalRefs ?? remote?.folder.externalRefs),
+    alertCount: remote?.alertCount ?? alertCount,
     name: f.name,
     status: (f.status || 'active') as RowStatus,
     color: f.color,
@@ -32,6 +44,9 @@ function localRow(f: Folder, dataMode: 'local' | 'synced', entityCounts: Investi
 function remoteRow(r: InvestigationSummary): InvestigationRow {
   return {
     folderId: r.folderId,
+    caseNumber: r.folder.caseNumber ?? undefined,
+    ticket: ticketLabel(r.folder.externalRefs),
+    alertCount: r.alertCount,
     name: r.folder.name,
     status: (r.folder.status || 'active') as RowStatus,
     color: r.folder.color,
@@ -169,6 +184,15 @@ export function InvestigationsHub({
     return map;
   }, [localFolders, allNotes, allTasks, allEvents, allWhiteboards, allIOCs, allChats]);
 
+  // Alert notes per local folder (webhook ingest tags them 'alert')
+  const localAlertsMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const n of (allNotes ?? [])) {
+      if (!n.trashed && n.folderId && n.tags?.includes('alert')) map.set(n.folderId, (map.get(n.folderId) ?? 0) + 1);
+    }
+    return map;
+  }, [allNotes]);
+
   // Remote-only investigations (not synced locally)
   const remoteOnlyInvestigations = remoteInvestigations.filter((r) => !syncedFolderIds.has(r.folderId) && matchesSearch(r.folder.name) && matchesStatus(r.folder.status));
 
@@ -231,7 +255,7 @@ export function InvestigationsHub({
           <SectionHeading title={t('hub.myInvestigations')} count={pureLocalFolders.length} />
           {localLoading || pureLocalFolders.length > 0 ? (
             <InvestigationTable
-              rows={pureLocalFolders.map((f) => localRow(f, 'local', localCountsMap.get(f.id) ?? ZERO_COUNTS))}
+              rows={pureLocalFolders.map((f) => localRow(f, 'local', localCountsMap.get(f.id) ?? ZERO_COUNTS, undefined, localAlertsMap.get(f.id)))}
               loading={localLoading}
               onOpen={onOpenInvestigation}
               onSettings={onEditInvestigation}
@@ -253,7 +277,7 @@ export function InvestigationsHub({
           <section className="mb-8">
             <SectionHeading title={t('hub.archivedSection')} count={archivedLocalFolders.length} />
             <InvestigationTable
-              rows={archivedLocalFolders.map((f) => localRow(f, 'local', localCountsMap.get(f.id) ?? ZERO_COUNTS))}
+              rows={archivedLocalFolders.map((f) => localRow(f, 'local', localCountsMap.get(f.id) ?? ZERO_COUNTS, undefined, localAlertsMap.get(f.id)))}
               onOpen={onOpenInvestigation}
               onSettings={onEditInvestigation}
               onUnarchive={onUnarchiveInvestigation}
@@ -269,7 +293,7 @@ export function InvestigationsHub({
             <InvestigationTable
               rows={syncedLocalFolders.map((f) => {
                 const remote = remoteByFolderId.get(f.id);
-                return localRow(f, 'synced', remote?.entityCounts ?? localCountsMap.get(f.id) ?? ZERO_COUNTS, remote);
+                return localRow(f, 'synced', remote?.entityCounts ?? localCountsMap.get(f.id) ?? ZERO_COUNTS, remote, localAlertsMap.get(f.id));
               })}
               loading={localLoading}
               skeletonRows={1}

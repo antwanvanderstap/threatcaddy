@@ -1,4 +1,4 @@
-import { pgTable, text, integer, bigint, boolean, timestamp, jsonb, unique, index, check } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, bigint, boolean, timestamp, jsonb, unique, uniqueIndex, index, check } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 // This singleton is locked until commit by every synced-table writer. Cursor
@@ -172,6 +172,11 @@ export const folders = pgTable('folders', {
   // Record id in the external system that opened this case, keyed by system
   // (e.g. { connectwise: '48219' }) — the dedupe key for scripted intake.
   externalRefs: jsonb('external_refs').default({}),
+  // Customer the investigation belongs to (soc-normalize tenant code, "NAG").
+  customerCode: text('customer_code'),
+  // Readable number per customer ("NAG-0042"), assigned and frozen by the
+  // case_number_assign trigger (migration 0026); clients cannot set it.
+  caseNumber: text('case_number'),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
   updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
@@ -179,6 +184,7 @@ export const folders = pgTable('folders', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
 }, (t) => ({
+  uqFoldersCaseNumber: uniqueIndex('uq_folders_case_number').on(t.caseNumber),
   idxFoldersUpdatedAt: index('idx_folders_updated_at').on(t.updatedAt),
   idxFoldersCreatedBy: index('idx_folders_created_by').on(t.createdBy),
   idxFoldersExternalRefs: index('idx_folders_external_refs').using('gin', t.externalRefs),
@@ -419,6 +425,13 @@ export const chatThreads = pgTable('chat_threads', {
 }));
 
 // ─── Server Settings ────────────────────────────────────────────
+
+// Last investigation number handed out per prefix (customer code, or the
+// case_number_prefix setting); written only by case_number_next() (0026).
+export const caseCounters = pgTable('case_counters', {
+  prefix: text('prefix').primaryKey(),
+  lastNumber: integer('last_number').notNull().default(0),
+});
 
 export const serverSettings = pgTable('server_settings', {
   key: text('key').primaryKey(),

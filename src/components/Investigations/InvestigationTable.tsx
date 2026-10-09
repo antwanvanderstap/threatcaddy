@@ -20,6 +20,11 @@ export interface InvestigationEntityCounts {
 
 export interface InvestigationRow {
   folderId: string;
+  /** Team-server number, e.g. NAG-0042. */
+  caseNumber?: string;
+  /** Ticket that opened the case, e.g. "CW #214033". */
+  ticket?: string;
+  alertCount?: number;
   name: string;
   status: 'active' | 'closed' | 'archived';
   color?: string;
@@ -80,7 +85,7 @@ const ENTITY_STATS = [
   { key: 'chats'       as const, labelKey: 'card.entity.chats',       icon: MessageSquare, color: 'text-purple' },
 ];
 
-type SortKey = 'name' | 'severity' | 'status' | 'updated';
+type SortKey = 'case' | 'name' | 'severity' | 'status' | 'updated';
 type SortDir = 'asc' | 'desc';
 
 function toMillis(v: string | number | undefined): number {
@@ -90,6 +95,7 @@ function toMillis(v: string | number | undefined): number {
 
 function compareRows(a: InvestigationRow, b: InvestigationRow, key: SortKey): number {
   switch (key) {
+    case 'case': return (a.caseNumber ?? '').localeCompare(b.caseNumber ?? '', undefined, { numeric: true });
     case 'name': return a.name.localeCompare(b.name);
     case 'severity': return severityRank(a.severity) - severityRank(b.severity);
     case 'status': return (STATUS_ORDER[a.status] ?? 0) - (STATUS_ORDER[b.status] ?? 0);
@@ -259,7 +265,10 @@ export function InvestigationTable({
       <table className="w-full text-sm">
         <thead>
           <tr className="text-[10px] text-text-muted text-start border-b border-border-subtle">
+            <SortHeader {...sortProps} k="case" label={t('table.id')} className="text-start" />
             <SortHeader {...sortProps} k="name" label={t('table.name')} className="text-start" />
+            <th scope="col" className="px-3 py-2 font-semibold uppercase tracking-wider text-start hidden md:table-cell">{t('table.ticket')}</th>
+            <th scope="col" className="px-3 py-2 font-semibold uppercase tracking-wider text-end hidden sm:table-cell">{t('table.alerts')}</th>
             <SortHeader {...sortProps} k="severity" label={tIncident('severity.label')} className="text-start hidden md:table-cell" />
             <th scope="col" className="px-3 py-2 font-semibold uppercase tracking-wider text-start hidden lg:table-cell">{tIncident('phase.label')}</th>
             <SortHeader {...sortProps} k="status" label={t('table.status')} className="text-start" />
@@ -273,7 +282,7 @@ export function InvestigationTable({
           {loading
             ? Array.from({ length: skeletonRows }).map((_, i) => (
                 <tr key={i} className="border-b border-border-subtle last:border-0 animate-pulse">
-                  <td className="px-3 py-3" colSpan={8}>
+                  <td className="px-3 py-3" colSpan={11}>
                     <div className="h-4 bg-bg-deep rounded w-1/3" />
                   </td>
                 </tr>
@@ -295,6 +304,11 @@ export function InvestigationTable({
                     tabIndex={0}
                     className="border-b border-border-subtle last:border-0 cursor-pointer hover:bg-bg-deep/60 focus:outline-none focus-visible:bg-bg-deep/60 transition-colors"
                   >
+                    {/* Investigation number */}
+                    <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-text-secondary">
+                      {row.caseNumber ?? <span className="text-text-muted">—</span>}
+                    </td>
+
                     {/* Name */}
                     <td className="px-3 py-2 max-w-0 w-[40%]">
                       <div className="flex items-center gap-2 min-w-0">
@@ -318,6 +332,16 @@ export function InvestigationTable({
                           )}
                         </div>
                       </div>
+                    </td>
+
+                    {/* Ticket */}
+                    <td className="px-3 py-2 hidden md:table-cell whitespace-nowrap font-mono text-xs text-text-secondary">
+                      {row.ticket ?? <span className="text-text-muted">—</span>}
+                    </td>
+
+                    {/* Alerts */}
+                    <td className="px-3 py-2 hidden sm:table-cell text-end tabular-nums text-text-secondary">
+                      {row.alertCount ? row.alertCount : <span className="text-text-muted">—</span>}
                     </td>
 
                     {/* Severity */}

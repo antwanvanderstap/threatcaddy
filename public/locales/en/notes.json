@@ -89,6 +89,10 @@
     "created": "Created {{date}}",
     "modified": "Modified {{date}}"
   },
+  "alerts": {
+    "title_one": "{{count}} alert",
+    "title_other": "{{count}} alerts"
+  },
   "list": {
     "defaultTitle": "Notes",
     "titleWithCount": "{{title}} ({{count}})",

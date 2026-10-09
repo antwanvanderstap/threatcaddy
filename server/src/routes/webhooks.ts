@@ -123,6 +123,8 @@ interface IngestPayload {
   detectedAt?: string | number;
   caseUpdate?: { type?: string; body: string };
   alertNote?: boolean;
+  /** Customer the alert belongs to; its code prefixes the investigation number. */
+  customer?: { code: string; name?: string };
 }
 
 const VALID_SEVERITIES = new Set(['low', 'medium', 'high', 'critical']);
@@ -130,6 +132,8 @@ const VALID_CASE_UPDATE_TYPES = new Set(['status', 'finding', 'action', 'escalat
 const MAX_EXTERNAL_REF_LEN = 100;
 const MAX_CASE_UPDATE_LEN = 20_000;
 const MAX_EXTERNAL_REFS = 10;
+// Prefix of the investigation number ("NAG" in NAG-0042).
+const CUSTOMER_CODE = /^[A-Za-z0-9]{1,12}$/;
 
 /** Parse an ISO string or epoch-ms number; undefined when absent or invalid. */
 function parseTimestamp(v: unknown): Date | undefined {
@@ -174,6 +178,13 @@ app.post('/ingest', async (c) => {
   const severity = VALID_SEVERITIES.has(String(body.severity || '')) ? String(body.severity) as 'low' | 'medium' | 'high' | 'critical' : 'medium';
   const description = sanitizeStr(body.description, 5000);
   const tags = Array.isArray(body.tags) ? body.tags.filter((t): t is string => typeof t === 'string' && t.length < 100).slice(0, 20) : [];
+
+  let customerCode: string | null = null;
+  if (body.customer !== undefined) {
+    const code = typeof body.customer?.code === 'string' ? body.customer.code.trim() : '';
+    if (!CUSTOMER_CODE.test(code)) return c.json({ error: 'customer.code must be 1-12 letters or digits' }, 400);
+    customerCode = code.toUpperCase();
+  }
 
   const refs: Record<string, string> = {};
   if (body.externalRef !== undefined) {
@@ -280,9 +291,8 @@ app.post('/ingest', async (c) => {
           || currentOwner.email.endsWith('@threatcaddy.internal')) throw new IngestAuthorizationError('Configured ingestion owner is no longer eligible', 503);
       if (!created && !await checkInvestigationAccess(ownerId, folderId, 'editor', tx)) throw new IngestAuthorizationError('Configured ingestion owner can no longer edit this investigation', 403);
       if (created) {
-        const severityIcon = severity === 'critical' ? '🚨' : severity === 'high' ? '⚠️' : severity === 'medium' ? '🔶' : '📋';
         await tx.insert(folders).values({
-          id: folderId, name: `${severityIcon} ${title}`.substring(0, 200),
+          id: folderId, name: title.substring(0, 200), customerCode,
           description: description || `Auto-created from ${source} alert`, status: 'active',
           tags: [...tags, `source:${source}`, 'auto-ingested'],
           severity,
@@ -324,9 +334,10 @@ app.post('/ingest', async (c) => {
       await tx.insert(notes).values({
         id: noteId,
         folderId,
-        title: `[${source.toUpperCase()}] ${title}`.substring(0, 200),
+        title: title.substring(0, 200),
         content: noteContent,
-        tags: ['alert', `source:${source}`, `severity:${severity}`],
+        // ref:<system>:<id> lets the investigation's alert list show each alert's ticket or case.
+        tags: ['alert', `source:${source}`, `severity:${severity}`, ...refEntries.map(([system, id]) => `ref:${system}:${id}`)],
         createdBy: ownerId, updatedBy: ownerId,
         pinned: severity === 'critical' || severity === 'high',
         trashed: false,

@@ -29,6 +29,7 @@ const GLOBAL_SYNC_TABLES = new Set(['tags', 'timelines']);
 const SERVER_MANAGED_FIELDS = new Set([
   'id', 'createdBy', 'updatedBy', 'version', 'createdAt', 'updatedAt', 'deletedAt',
   'localOnly', // client-only field — never store on server
+  'caseNumber', // folders: assigned by the database (migration 0026)
 ]);
 
 /** Max allowed size for string fields to prevent oversized payloads */

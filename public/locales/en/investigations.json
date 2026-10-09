@@ -16,7 +16,10 @@
   "hub.noShared": "No shared investigations \u2014 ask a team member to invite you",
   "hub.disconnected": "Server disconnected \u2014 remote investigations unavailable",
 
+  "table.id": "ID",
   "table.name": "Name",
+  "table.ticket": "Ticket",
+  "table.alerts": "Alerts",
   "table.status": "Status",
   "table.mode": "Access",
   "table.contents": "Contents",

@@ -320,6 +320,8 @@ export function sanitizeFolder(raw: unknown): Folder | null {
     recoveredAt: r.recoveredAt != null ? num(r.recoveredAt) : undefined,
     incidentCommander: r.incidentCommander != null ? str(r.incidentCommander) : undefined,
     externalRefs: sanitizeStringMap(r.externalRefs),
+    customerCode: r.customerCode != null ? str(r.customerCode) : undefined,
+    caseNumber: r.caseNumber != null ? str(r.caseNumber) : undefined,
   };
 }
 

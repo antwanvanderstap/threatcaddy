@@ -260,6 +260,9 @@ export function Sidebar({
               {!selectedFolder.color && (
                 <div className={cn('w-2 h-2 rounded-full shrink-0', statusColor)} />
               )}
+              {selectedFolder.caseNumber && (
+                <span className="text-[10px] font-mono text-text-muted shrink-0">{selectedFolder.caseNumber}</span>
+              )}
               <span className="text-sm font-medium text-text-primary truncate flex-1">{selectedFolder.name}</span>
               <SettingsIcon size={12} className="text-text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity shrink-0" />
             </div>

@@ -9,6 +9,7 @@ import { formatIOCsJSON, formatIOCsCSV, formatIOCsFlatJSON, formatIOCsFlatCSV } 
 import type { IOCExportEntry, ThreatIntelExportConfig } from '../../lib/ioc-export';
 import { downloadFile } from '../../lib/export';
 import { Virtuoso } from 'react-virtuoso';
+import { AlertStack, isAlertNote } from './AlertStack';
 
 interface NoteListProps {
   notes: Note[];
@@ -44,6 +45,9 @@ export function NoteList({ notes, selectedId, onSelect, sort, onSortChange, titl
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const sortMenuRef = useRef<HTMLDivElement>(null);
 
+  // Ingested alerts are stacked above the notes instead of mixed in with them.
+  const alertNotes = useMemo(() => notes.filter(isAlertNote), [notes]);
+  const listNotes = useMemo(() => notes.filter((n) => !isAlertNote(n)), [notes]);
   const notesWithIOCs = useMemo(
     () => notes.filter((n) => n.iocAnalysis && n.iocAnalysis.iocs.some((ioc) => !ioc.dismissed)),
     [notes]
@@ -224,8 +228,10 @@ export function NoteList({ notes, selectedId, onSelect, sort, onSortChange, titl
         <IOCFilterBar selectedTypes={selectedIOCTypes} onChange={onIOCTypesChange} />
       )}
 
+      <AlertStack alerts={alertNotes} selectedId={selectedId} onSelect={onSelect} />
+
       <div className="flex-1 overflow-hidden p-2">
-        {notes.length === 0 ? (
+        {listNotes.length === 0 && alertNotes.length > 0 ? null : listNotes.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 py-16 text-gray-500">
             <FileText size={40} strokeWidth={1.5} className="text-gray-600" />
             <p className="text-sm">{t('emptyState')}</p>
@@ -242,12 +248,12 @@ export function NoteList({ notes, selectedId, onSelect, sort, onSortChange, titl
           <Virtuoso
             data={(() => {
               // Build display list: top-level notes + expanded folder children
-              const topLevel = notes.filter(n => !n.parentNoteId);
+              const topLevel = listNotes.filter(n => !n.parentNoteId);
               const result: Note[] = [];
               for (const note of topLevel) {
                 result.push(note);
                 if (note.isFolder && expandedFolders.has(note.id)) {
-                  const children = notes.filter(n => n.parentNoteId === note.id);
+                  const children = listNotes.filter(n => n.parentNoteId === note.id);
                   result.push(...children);
                 }
               }

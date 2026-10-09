@@ -35,9 +35,13 @@ export interface InvestigationListItem {
     clsLevel: string | null;
     papLevel: string | null;
     tags: string[];
+    caseNumber?: string | null;
+    customerCode?: string | null;
+    externalRefs?: Record<string, string> | null;
     createdAt: string;
     updatedAt: string;
   };
+  alertCount?: number;
   entityCounts: {
     notes: number;
     tasks: number;
@@ -241,10 +245,19 @@ export async function syncSnapshot(folderId: string): Promise<SyncSnapshotResult
 
 // ─── Investigations ─────────────────────────────────────────────
 
+/** Every investigation the user is a member of; the server pages at 200. */
 export async function fetchInvestigations(): Promise<{ data: InvestigationListItem[]; total: number; limit: number; offset: number }> {
-  const resp = await apiFetch('/api/investigations');
-  if (!resp.ok) throw new Error('Failed to fetch investigations');
-  return resp.json();
+  const data: InvestigationListItem[] = [];
+  let total = 0;
+  do {
+    const resp = await apiFetch(`/api/investigations?limit=200&offset=${data.length}`);
+    if (!resp.ok) throw new Error('Failed to fetch investigations');
+    const page = await resp.json() as { data: InvestigationListItem[]; total: number };
+    total = page.total;
+    if (page.data.length === 0) break;
+    data.push(...page.data);
+  } while (data.length < total);
+  return { data, total, limit: data.length, offset: 0 };
 }
 
 export async function fetchInvestigationMembers(folderId: string): Promise<InvestigationMember[]> {
