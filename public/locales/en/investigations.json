@@ -69,6 +69,11 @@
 
   "detail.title": "Investigation Details",
   "detail.nameLabel": "Name",
+  "detail.observablesLabel": "Observed STIX objects ({{count}})",
+  "detail.observablesEmpty": "No observables recorded yet",
+  "detail.observablesShowAll": "Show all {{count}}",
+  "detail.observablesShowLess": "Show less",
+  "detail.observablesOpen": "Open IOCs",
   "detail.descriptionLabel": "Description",
   "detail.descriptionPlaceholder": "Investigation description...",
   "detail.statusLabel": "Status",

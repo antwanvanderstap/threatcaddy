@@ -532,6 +532,14 @@ export const IOC_TYPE_LABELS: Record<IOCType, { label: string; color: string }> 
   'iocType', IOC_TYPE_COLORS,
 );
 
+/** STIX 2.1 object type each IOC type is observed as (see lib/stix-export.ts). */
+export const IOC_STIX_OBJECT_TYPES: Record<IOCType, string> = {
+  ipv4: 'ipv4-addr', ipv6: 'ipv6-addr', domain: 'domain-name', url: 'url',
+  email: 'email-addr', md5: 'file', sha1: 'file', sha256: 'file', 'file-path': 'file',
+  cve: 'vulnerability', 'mitre-attack': 'attack-pattern',
+  'yara-rule': 'indicator', 'sigma-rule': 'indicator',
+};
+
 export const IOC_STATUS_VALUES = ['active', 'resolved', 'false-positive', 'under-investigation'] as const;
 export type IOCStatusValue = typeof IOC_STATUS_VALUES[number];
 

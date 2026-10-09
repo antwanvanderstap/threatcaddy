@@ -1667,6 +1667,11 @@ const AppInner = memo(function AppInner({
     };
   }, [editingFolderId, notes.notes, tasks.tasks, timeline.events, whiteboards]);
 
+  const investigationObservables = useMemo(
+    () => editingFolderId ? screensafeStandaloneIOCs.filter((i) => i.folderId === editingFolderId && !i.trashed && !i.archived) : [],
+    [editingFolderId, screensafeStandaloneIOCs]
+  );
+
   const screenshareViewHidden = !!screenshareMaxLevel && (selectedContextHidden || showSettings || ['activity', 'agent', 'caddyshack', 'chat'].includes(activeView));
   const filterBar = (selectedFolderId || selectedTag) ? (
     <ActiveFilterBar
@@ -2528,6 +2533,13 @@ const AppInner = memo(function AppInner({
           allTags={tags}
           onCreateTag={loggedCreateTag}
           entityCounts={investigationEntityCounts}
+          observables={investigationObservables}
+          onOpenObservables={() => {
+            setSelectedFolderId(editingFolder.id);
+            setSelectedTag(undefined); setShowTrash(false); setShowArchive(false);
+            setEditingFolderId(undefined);
+            navigateTo('ioc-stats');
+          }}
           effectiveClsLevels={effectiveClsLevels}
           onCreateTimeline={async (name) => {
             const tl = await loggedCreateTimeline(name);
