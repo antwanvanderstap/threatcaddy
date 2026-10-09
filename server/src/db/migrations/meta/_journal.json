@@ -190,6 +190,13 @@
       "when": 1772583124973,
       "tag": "0026_case_numbers",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1772583125973,
+      "tag": "0027_incident_types",
+      "breakpoints": true
     }
   ]
 }

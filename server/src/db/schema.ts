@@ -177,6 +177,9 @@ export const folders = pgTable('folders', {
   // Readable number per customer ("NAG-0042"), assigned and frozen by the
   // case_number_assign trigger (migration 0026); clients cannot set it.
   caseNumber: text('case_number'),
+  // Incident type id (incident_types.id). No foreign key: a type in use cannot
+  // be deleted, and clients treat an unknown id as the built-in default type.
+  incidentType: text('incident_type'),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
   updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
@@ -617,6 +620,28 @@ export const savedSearches = pgTable('saved_searches', {
   idxSavedSearchesUserId: index('idx_saved_searches_user_id').on(t.userId),
   idxSavedSearchesIsShared: index('idx_saved_searches_is_shared').on(t.isShared),
   idxSavedSearchesCreatedAt: index('idx_saved_searches_created_at').on(t.createdAt),
+}));
+
+// ─── Incident Types ─────────────────────────────────────────────
+
+// Team-wide incident types: each has a layout for the investigation Summary
+// view (null = the client's built-in default layout), the ATT&CK techniques
+// that classify it, and a default playbook. Admins edit; everyone reads.
+export const incidentTypes = pgTable('incident_types', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description').notNull().default(''),
+  color: text('color'),
+  attackTechniques: jsonb('attack_techniques').notNull().default([]),
+  defaultPlaybookId: text('default_playbook_id'),
+  layout: jsonb('layout'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+  updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  uqIncidentTypesName: uniqueIndex('uq_incident_types_name').on(t.name),
 }));
 
 // ─── Integration Templates ──────────────────────────────────────
